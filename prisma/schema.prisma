@@ -1,0 +1,126 @@
+// Prisma Schema for Next.js E-Commerce Platform with User Models & Sub-Orders
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("CUSTOMER") // CUSTOMER, ADMIN, VENDOR
+  avatar    String?
+  vendorId  String?
+  vendor    Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  orders    Order[]
+  reviews   Review[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vendor {
+  id                String     @id @default(cuid())
+  name              String
+  email             String     @unique
+  warehouseLocation String
+  rating            Float      @default(4.8)
+  users             User[]
+  products          Product[]
+  subOrders         SubOrder[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+}
+
+model Category {
+  id       String     @id @default(cuid())
+  name     String     @unique
+  slug     String     @unique
+  fields   Json?      // Array of custom field specifications: [{ name, label, type, options, required }]
+  parentId String?
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+}
+
+model Product {
+  id           String      @id @default(cuid())
+  title        String
+  description  String
+  price        Float
+  stock        Int
+  image        String
+  rating       Float       @default(4.7)
+  reviewsCount Int         @default(120)
+  attributes   Json?       // Key-value pairs for category custom fields
+  vendorId     String
+  vendor       Vendor      @relation(fields: [vendorId], references: [id])
+  categoryId   String
+  category     Category    @relation(fields: [categoryId], references: [id])
+  orderItems   OrderItem[]
+  reviews      Review[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      @default(5)
+  comment   String
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reviews")
+}
+
+model Order {
+  id              String     @id @default(cuid())
+  orderNumber     String     @unique @default(cuid())
+  userId          String?
+  user            User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerName    String
+  customerEmail   String
+  shippingAddress String
+  paymentMethod   String     @default("CREDIT_CARD")
+  paymentStatus   String     @default("PAID") // PENDING, PAID, FAILED, REFUNDED
+  totalAmount     Float
+  aggregateStatus String     @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED
+  subOrders       SubOrder[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model SubOrder {
+  id              String      @id @default(cuid())
+  subOrderNumber  String      @unique @default(cuid())
+  orderId         String
+  order           Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendorId        String
+  vendor          Vendor      @relation(fields: [vendorId], references: [id])
+  status          String      @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED
+  subtotal        Float
+  trackingNumber  String?
+  shippingCarrier String?
+  items           OrderItem[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  subOrderId String
+  subOrder   SubOrder @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  price      Float
+}
