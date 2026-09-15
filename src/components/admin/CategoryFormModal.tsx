@@ -41,6 +41,7 @@ interface CategoryFormModalProps {
   onSuccess: () => void;
   editingCategory: AdminCategory | null;
   categories: AdminCategory[];
+  preselectedParentId?: string | null;
 }
 
 export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
@@ -49,6 +50,7 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
   onSuccess,
   editingCategory,
   categories,
+  preselectedParentId,
 }) => {
   const [catName, setCatName] = useState('');
   const [selectedParentId, setSelectedParentId] = useState('');
@@ -70,7 +72,7 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
         setCustomFields(editingCategory.fields || []);
       } else {
         setCatName('');
-        setSelectedParentId('');
+        setSelectedParentId(preselectedParentId || '');
         setCustomFields([]);
       }
       setModalError(null);
@@ -79,13 +81,55 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
       setFieldOptions('');
       setFieldRequired(false);
     }
-  }, [isOpen, editingCategory]);
+  }, [isOpen, editingCategory, preselectedParentId]);
 
   const fieldTypeOptions: SelectOption[] = [
     { value: 'text', label: 'Single-line Text Input' },
     { value: 'number', label: 'Number Input' },
     { value: 'select', label: 'Dropdown Select Options' },
     { value: 'textarea', label: 'Multi-line Text Area' },
+  ];
+
+  const getCategoryHierarchyPath = (catId: string): string => {
+    const cat = categories.find((c) => c.id === catId);
+    if (!cat) return '';
+    const parts = [cat.name];
+    let curr = cat;
+    while (curr.parentId) {
+      const parent = categories.find((c) => c.id === curr.parentId);
+      if (!parent) break;
+      parts.unshift(parent.name);
+      curr = parent;
+    }
+    return parts.join(' > ');
+  };
+
+  const getRootCategoryId = (catId: string): string => {
+    let curr = categories.find((c) => c.id === catId);
+    while (curr?.parentId) {
+      const parent = categories.find((c) => c.id === curr!.parentId);
+      if (!parent) break;
+      curr = parent;
+    }
+    return curr?.id || catId;
+  };
+
+  // Filter parent category options to the relevant root category tree/family
+  const activeRootId = selectedParentId ? getRootCategoryId(selectedParentId) : null;
+
+  const filteredCategoriesForParentSelect = activeRootId
+    ? categories.filter((c) => getRootCategoryId(c.id) === activeRootId)
+    : categories;
+
+  const parentCategoryOptions: SelectOption[] = [
+    { value: '', label: 'None (Top-Level Category)' },
+    ...filteredCategoriesForParentSelect
+      .filter((c) => c.id !== editingCategory?.id)
+      .map((c) => ({
+        value: c.id,
+        label: getCategoryHierarchyPath(c.id),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
   ];
 
   const handleAddFieldSpec = () => {
@@ -191,6 +235,28 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
           </div>
         )}
 
+        {/* Active Parent Category Indicator Badge */}
+        {selectedParentId && (
+          <div className="p-3 bg-indigo-50 border border-indigo-200/80 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse" />
+              <span className="text-xs font-bold text-indigo-900">
+                Creating Sub-Category under:{' '}
+                <span className="font-black text-indigo-700 underline underline-offset-2">
+                  {getCategoryHierarchyPath(selectedParentId) || 'Parent Category'}
+                </span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedParentId('')}
+              className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline"
+            >
+              Convert to Top-Level Parent
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
@@ -202,16 +268,8 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
             />
 
             <Select
-              label="Parent Category (Optional)"
-              options={[
-                { value: '', label: '-- Top-Level Category (No Parent) --' },
-                ...categories
-                  .filter((c) => !editingCategory || c.id !== editingCategory.id)
-                  .map((c) => ({
-                    value: c.id,
-                    label: c.name + (c.parent ? ` (Sub of ${c.parent.name})` : ''),
-                  })),
-              ]}
+              label="Parent Category"
+              options={parentCategoryOptions}
               value={selectedParentId}
               onChange={(val: any) => setSelectedParentId(val)}
             />
@@ -282,7 +340,10 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
                 {customFields.map((field, idx) => (
                   <div key={idx} className="p-3 bg-white border border-slate-200 rounded-xl text-xs flex items-center justify-between">
                     <div>
-                      <span className="font-extrabold text-slate-900">{field.label}</span>
+                      <span className="font-extrabold text-slate-900">
+                        {field.label}
+                        {field.required && <span className="text-rose-500 font-extrabold ml-1">*</span>}
+                      </span>
                       <span className="text-[11px] text-indigo-600 font-mono ml-2">({field.type})</span>
                       {field.options && field.options.length > 0 && (
                         <p className="text-[10px] text-slate-400 mt-0.5">

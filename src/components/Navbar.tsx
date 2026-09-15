@@ -151,6 +151,15 @@ interface NavbarProps {
   isCartOpen?: boolean;
 }
 
+export interface NavbarCategory {
+  id: string;
+  name: string;
+  slug: string;
+  parentId?: string | null;
+  parent?: { id: string; name: string; slug: string } | null;
+  children?: { id: string; name: string; slug: string }[] | null;
+}
+
 export const Navbar: React.FC<NavbarProps> = ({
   cartItems = [],
   onOpenCart,
@@ -169,7 +178,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const totalCartCount = (cartItems || []).reduce((acc, item) => acc + item.quantity, 0);
 
-  const [dbCategories, setDbCategories] = useState<{ id: string; name: string }[]>([]);
+  const [dbCategories, setDbCategories] = useState<NavbarCategory[]>([]);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
 
   // Active route checks
   const isAdminActive = pathname?.startsWith('/admin');
@@ -217,10 +227,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     fetchDynamicCategories();
   }, []);
 
-  const categoryList = [
-    { id: 'all', label: 'All Products' },
-    ...dbCategories.map((c) => ({ id: c.id, label: c.name })),
-  ];
+  const rootCategories = dbCategories.filter((c) => !c.parentId);
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm shadow-slate-200/40">
@@ -336,21 +343,153 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Category Tabs Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto py-2.5 no-scrollbar border-t border-slate-100">
-          {categoryList.map((cat) => {
-            const isActive = isHomePage && selectedCategory === cat.id;
+        <div className="flex items-center gap-2 flex-wrap py-2.5 relative z-30 border-t border-slate-100 overflow-visible">
+          {/* All Products Tab */}
+          <button
+            onClick={() => handleCategoryClick('all')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+              isHomePage && selectedCategory === 'all'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            All Products
+          </button>
+
+          {/* Root Categories with Optional Sub-Category Dropdown */}
+          {rootCategories.map((rootCat) => {
+            const subCategories = dbCategories.filter((sub) => sub.parentId === rootCat.id);
+            const isRootActive = isHomePage && selectedCategory === rootCat.id;
+            const isSubActive = isHomePage && subCategories.some((sub) => sub.id === selectedCategory);
+            const isCatActive = isRootActive || isSubActive;
+
+            if (subCategories.length === 0) {
+              return (
+                <button
+                  key={rootCat.id}
+                  onClick={() => handleCategoryClick(rootCat.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    isRootActive
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  {rootCat.name}
+                </button>
+              );
+            }
+
+            const isOpen = openDropdownId === rootCat.id;
+
             return (
-              <button
-                key={cat.id}
-                onClick={() => handleCategoryClick(cat.id)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
+              <div
+                key={rootCat.id}
+                className="relative group"
+                onMouseLeave={() => setOpenDropdownId(null)}
               >
-                {cat.label}
-              </button>
+                <div
+                  className={`flex items-center rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                    isCatActive
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      handleCategoryClick(rootCat.id);
+                      setOpenDropdownId(null);
+                    }}
+                    className="pl-3.5 pr-1 py-1.5 font-semibold text-xs transition-all flex items-center rounded-l-xl cursor-pointer"
+                  >
+                    <span>{rootCat.name}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenDropdownId(isOpen ? null : rootCat.id);
+                    }}
+                    className="pr-2.5 pl-1 py-1.5 rounded-r-xl flex items-center justify-center transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
+                    title={`Toggle ${rootCat.name} sub-categories`}
+                  >
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+
+                {/* Sub-Categories Floating Dropdown Menu with Hover Bridge */}
+                <div
+                  className={`absolute left-0 top-full pt-1.5 w-56 z-50 transition-all ${
+                    isOpen ? 'block' : 'hidden group-hover:block'
+                  }`}
+                >
+                  <div className="bg-white border border-slate-200/90 rounded-2xl shadow-2xl py-2 animate-in fade-in duration-150">
+                    <div className="px-3.5 py-1 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                      {rootCat.name} Sub-Categories
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleCategoryClick(rootCat.id);
+                        setOpenDropdownId(null);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-xs font-bold transition-colors ${
+                        isRootActive
+                          ? 'text-indigo-600 bg-indigo-50/80'
+                          : 'text-slate-700 hover:text-indigo-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      All {rootCat.name}
+                    </button>
+                    <div className="border-t border-slate-100 my-1" />
+                    {subCategories.map((sub) => {
+                      const isSelectedSub = isHomePage && selectedCategory === sub.id;
+                      const childSubCats = dbCategories.filter((c) => c.parentId === sub.id);
+                      return (
+                        <div key={sub.id} className="py-0.5">
+                          <button
+                            onClick={() => {
+                              handleCategoryClick(sub.id);
+                              setOpenDropdownId(null);
+                            }}
+                            className={`w-full text-left px-4 py-1.5 text-xs transition-colors flex items-center justify-between ${
+                              isSelectedSub
+                                ? 'text-indigo-600 font-bold bg-indigo-50/80'
+                                : 'text-slate-700 font-bold hover:text-indigo-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>{sub.name}</span>
+                          </button>
+
+                          {childSubCats.length > 0 && (
+                            <div className="pl-5 pr-2 py-1 space-y-1 bg-slate-50/60 border-y border-slate-100/60">
+                              {childSubCats.map((childSub) => {
+                                const isSelectedChild = isHomePage && selectedCategory === childSub.id;
+                                return (
+                                  <button
+                                    key={childSub.id}
+                                    onClick={() => {
+                                      handleCategoryClick(childSub.id);
+                                      setOpenDropdownId(null);
+                                    }}
+                                    className={`w-full text-left px-2 py-1 text-[11px] font-medium rounded-lg transition-colors flex items-center gap-1.5 ${
+                                      isSelectedChild
+                                        ? 'text-indigo-600 font-extrabold bg-indigo-100/80'
+                                        : 'text-slate-600 hover:text-indigo-600 hover:bg-slate-100'
+                                    }`}
+                                  >
+                                    <span className="w-1 h-1 rounded-full bg-slate-400 shrink-0" />
+                                    <span>{childSub.name}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>

@@ -9,6 +9,7 @@ import { AddProductModal } from '@/components/vendor/AddProductModal';
 import { SubOrderCard, VendorSubOrderData } from '@/components/vendor/SubOrderCard';
 import { VendorReviewsSection } from '@/components/vendor/VendorReviewsSection';
 import VendorSalesAnalyticsSection from '@/components/vendor/VendorSalesAnalyticsSection';
+import { VendorOffersSection } from '@/components/vendor/VendorOffersSection';
 import { formatCurrency } from '@/lib/utils';
 import { Navbar } from '@/components/Navbar';
 import { SidebarNav } from '@/components/SidebarNav';
@@ -22,6 +23,7 @@ import {
   Truck,
   MessageSquare,
   BarChart3,
+  Tag,
   Star,
   Layers,
   ArrowLeft,
@@ -80,7 +82,7 @@ export default function VendorDashboardPage() {
   const [products, setProducts] = useState<VendorProduct[]>([]);
   const [subOrders, setSubOrders] = useState<VendorSubOrder[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'reviews' | 'sales'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'reviews' | 'sales' | 'offers'>('products');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // Global Navigation Drawer States
@@ -305,6 +307,17 @@ export default function VendorDashboardPage() {
             <BarChart3 className="w-4 h-4 text-emerald-500" />
             Sales & Orders Analytics
           </button>
+          <button
+            onClick={() => setActiveTab('offers')}
+            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'offers'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Tag className="w-4 h-4 text-indigo-600" />
+            Offers & Discounts
+          </button>
         </div>
 
         {/* Tab 1: Products Table */}
@@ -416,6 +429,9 @@ export default function VendorDashboardPage() {
 
         {/* Tab 4: Sales & Orders Analytics */}
         {activeTab === 'sales' && <VendorSalesAnalyticsSection />}
+
+        {/* Tab 5: Special Occasion Offers & Discounts */}
+        {activeTab === 'offers' && <VendorOffersSection vendorProducts={products} />}
       </main>
 
       {/* Add Product Modal */}

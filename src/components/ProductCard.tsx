@@ -41,25 +41,21 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
         </div>
 
         {/* Quick View & Add to Cart Overlay */}
-        <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2.5 p-4">
-          <Button
-            variant="secondary"
-            size="sm"
+        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[3px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-2.5 p-4 z-20">
+          <button
             onClick={() => onQuickView(product)}
-            leftIcon={<Eye className="w-4 h-4 text-indigo-600" />}
-            className="bg-white text-slate-900 hover:bg-slate-100 font-semibold"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-white text-indigo-600 border border-indigo-200/80 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 shadow-md shadow-slate-900/10 transition-all active:scale-95 cursor-pointer"
           >
-            Quick View
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
+            <Eye className="w-4 h-4" />
+            <span>Quick View</span>
+          </button>
+          <button
             onClick={() => onAddToCart(product)}
-            leftIcon={<ShoppingCart className="w-4 h-4" />}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/30 transition-all active:scale-95 cursor-pointer border border-indigo-500/40"
           >
-            Add
-          </Button>
+            <ShoppingCart className="w-4 h-4" />
+            <span>Add</span>
+          </button>
         </div>
       </div>
 

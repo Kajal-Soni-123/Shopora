@@ -151,8 +151,8 @@ export default function OrderDetailsPage() {
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={[]} onUpdateQuantity={() => {}} onRemoveItem={() => {}} onProceedToCheckout={() => router.push('/')} />
 
       {/* Tracker Sub-Header Bar */}
-      <div className="bg-white border-b border-slate-200/80 shadow-xs py-3 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+      <div className="bg-white border-b border-slate-200/80 shadow-xs py-3">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <Link
             href="/"
             className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-indigo-600 transition-colors"
@@ -169,7 +169,7 @@ export default function OrderDetailsPage() {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-[1600px] mx-auto px-4 pt-8 space-y-8">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
         {/* Parent Order Banner */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-sm space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-6">
