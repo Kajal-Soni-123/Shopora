@@ -108,6 +108,24 @@ export default function ProfilePage() {
       <SidebarNav isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={[]} onUpdateQuantity={() => {}} onRemoveItem={() => {}} onProceedToCheckout={() => router.push('/')} />
 
+      {/* Profile Sub-Header Bar */}
+      <div className="bg-white border-b border-slate-200/80 shadow-xs py-3">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-indigo-600 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Marketplace
+          </Link>
+
+          <div className="flex items-center gap-2">
+            <UserIcon className="w-4 h-4 text-indigo-600" />
+            <span className="font-extrabold text-xs text-slate-900">User Account Profile</span>
+          </div>
+        </div>
+      </div>
+
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
         

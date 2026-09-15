@@ -2,19 +2,19 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { AddProductModal } from '@/components/vendor/AddProductModal';
-import { SubOrderCard, VendorSubOrderData } from '@/components/vendor/SubOrderCard';
+import { RequestCategoryModal } from '@/components/vendor/RequestCategoryModal';
+import { VendorProductsSection, VendorProduct } from '@/components/vendor/VendorProductsSection';
+import { VendorOrdersSection, VendorSubOrder } from '@/components/vendor/VendorOrdersSection';
+import { VendorCategoryRequestsSection, VendorCategoryRequest } from '@/components/vendor/VendorCategoryRequestsSection';
 import { VendorReviewsSection } from '@/components/vendor/VendorReviewsSection';
 import VendorSalesAnalyticsSection from '@/components/vendor/VendorSalesAnalyticsSection';
 import { VendorOffersSection } from '@/components/vendor/VendorOffersSection';
-import { formatCurrency } from '@/lib/utils';
 import { Navbar } from '@/components/Navbar';
 import { SidebarNav } from '@/components/SidebarNav';
 import { CartDrawer } from '@/components/CartDrawer';
-import { ShoporaLogo } from '@/components/common/ShoporaLogo';
 import {
   Store,
   Warehouse,
@@ -24,56 +24,10 @@ import {
   MessageSquare,
   BarChart3,
   Tag,
-  Star,
-  Layers,
   ArrowLeft,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  ShieldCheck,
   Loader2,
-  AlertCircle,
-  Copy,
+  FolderPlus,
 } from 'lucide-react';
-
-interface VendorProduct {
-  id: string;
-  title: string;
-  description: string;
-  price: number;
-  stock: number;
-  image: string;
-  rating: number;
-  reviewsCount: number;
-  category: { id: string; name: string };
-  createdAt: string;
-}
-
-interface VendorSubOrder {
-  id: string;
-  subOrderNumber: string;
-  status: string;
-  subtotal: number;
-  trackingNumber?: string | null;
-  shippingCarrier?: string | null;
-  createdAt: string;
-  order: {
-    orderNumber: string;
-    customerName: string;
-    customerEmail: string;
-    shippingAddress: string;
-    paymentStatus: string;
-  };
-  items: {
-    id: string;
-    quantity: number;
-    price: number;
-    product: {
-      title: string;
-      image: string;
-    };
-  }[];
-}
 
 export default function VendorDashboardPage() {
   const router = useRouter();
@@ -81,24 +35,28 @@ export default function VendorDashboardPage() {
 
   const [products, setProducts] = useState<VendorProduct[]>([]);
   const [subOrders, setSubOrders] = useState<VendorSubOrder[]>([]);
+  const [categoryRequests, setCategoryRequests] = useState<VendorCategoryRequest[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'reviews' | 'sales' | 'offers'>('products');
+  const [activeTab, setActiveTab] = useState<
+    'products' | 'orders' | 'reviews' | 'sales' | 'offers' | 'category-requests'
+  >('products');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isCategoryRequestModalOpen, setIsCategoryRequestModalOpen] = useState(false);
 
   // Global Navigation Drawer States
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Fulfillment State
-  const [fulfillmentInput, setFulfillmentInput] = useState<{ [key: string]: { tracking: string; carrier: string } }>({});
   const [fulfillingId, setFulfillingId] = useState<string | null>(null);
 
   const fetchVendorData = async () => {
     try {
       setLoadingData(true);
-      const [resProducts, resOrders] = await Promise.all([
+      const [resProducts, resOrders, resRequests] = await Promise.all([
         fetch('/api/vendor/products'),
         fetch('/api/vendor/orders'),
+        fetch('/api/vendor/category-requests'),
       ]);
 
       if (resProducts.ok) {
@@ -108,6 +66,10 @@ export default function VendorDashboardPage() {
       if (resOrders.ok) {
         const dataO = await resOrders.json();
         setSubOrders(dataO.data || []);
+      }
+      if (resRequests.ok) {
+        const dataR = await resRequests.json();
+        setCategoryRequests(dataR.data || []);
       }
     } catch (err) {
       console.error('Error fetching vendor data:', err);
@@ -119,7 +81,6 @@ export default function VendorDashboardPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user || user.role !== 'VENDOR') {
-        // Not logged in or not a vendor
         return;
       }
       fetchVendorData();
@@ -147,6 +108,23 @@ export default function VendorDashboardPage() {
       console.error('Fulfillment update error:', err);
     } finally {
       setFulfillingId(null);
+    }
+  };
+
+  const handleDeleteCategoryRequest = async (id: string) => {
+    try {
+      const res = await fetch(`/api/vendor/category-requests/${id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        await fetchVendorData();
+      } else {
+        const errorData = await res.json();
+        alert(errorData.error || 'Failed to delete category request.');
+      }
+    } catch (err) {
+      console.error('Delete category request error:', err);
+      alert('An unexpected error occurred while deleting category request.');
     }
   };
 
@@ -194,19 +172,21 @@ export default function VendorDashboardPage() {
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} items={[]} onUpdateQuantity={() => {}} onRemoveItem={() => {}} onProceedToCheckout={() => router.push('/')} />
 
       {/* Vendor Store Sub-Header Bar */}
-      <div className="bg-white border-b border-slate-200/80 shadow-xs py-3 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <div className="bg-white border-b border-slate-200/80 shadow-xs py-3">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <Link
               href="/"
-              className="p-1.5 text-slate-400 hover:text-slate-900 rounded-xl hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-indigo-600 transition-colors py-1 shrink-0"
             >
               <ArrowLeft className="w-4 h-4" />
+              <span>Back to Marketplace</span>
             </Link>
+            <div className="h-6 w-px bg-slate-200 hidden sm:block shrink-0" />
             <div>
               <h2 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                <Store className="w-4 h-4 text-indigo-600" />
-                {user.vendor?.name || 'Boutique Partner Store'}
+                <Store className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span>{user.vendor?.name || 'Boutique Partner Store'}</span>
               </h2>
               <p className="text-[11px] text-slate-500 font-medium">
                 {user.vendor?.warehouseLocation || 'Central Warehouse'}
@@ -214,13 +194,22 @@ export default function VendorDashboardPage() {
             </div>
           </div>
 
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/25 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            Publish Product
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCategoryRequestModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs transition-all"
+            >
+              <FolderPlus className="w-4 h-4" />
+              Request New Category
+            </button>
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/25 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Publish Product
+            </button>
+          </div>
         </div>
       </div>
 
@@ -286,6 +275,17 @@ export default function VendorDashboardPage() {
             Sub-Orders Fulfillment ({subOrders.length})
           </button>
           <button
+            onClick={() => setActiveTab('category-requests')}
+            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'category-requests'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <FolderPlus className="w-4 h-4 text-indigo-600" />
+            Category Requests ({categoryRequests.length})
+          </button>
+          <button
             onClick={() => setActiveTab('reviews')}
             className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'reviews'
@@ -320,117 +320,37 @@ export default function VendorDashboardPage() {
           </button>
         </div>
 
-        {/* Tab 1: Products Table */}
+        {/* Modular Tab Content */}
         {activeTab === 'products' && (
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
-            {loadingData ? (
-              <div className="p-12 text-center text-slate-500">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-600" />
-                <p className="text-xs font-semibold">Loading catalog products...</p>
-              </div>
-            ) : products.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 space-y-3">
-                <Package className="w-10 h-10 text-slate-300 mx-auto" />
-                <h3 className="text-sm font-bold text-slate-800">No products published yet</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
-                  Click the "Publish Product" button to add your first boutique product to the marketplace.
-                </p>
-                <button
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20"
-                >
-                  Publish Product
-                </button>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
-                      <th className="py-3.5 px-6">Product</th>
-                      <th className="py-3.5 px-4">Category</th>
-                      <th className="py-3.5 px-4">Price</th>
-                      <th className="py-3.5 px-4">Stock</th>
-                      <th className="py-3.5 px-4">Rating</th>
-                      <th className="py-3.5 px-6 text-right">Published</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {products.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0">
-                              <Image src={p.image} alt={p.title} fill sizes="48px" className="object-cover" />
-                            </div>
-                            <div>
-                              <p className="font-bold text-slate-900">{p.title}</p>
-                              <p className="text-[11px] text-slate-500 truncate max-w-xs">{p.description}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-4 font-semibold text-indigo-600">
-                          {p.category?.name || 'General'}
-                        </td>
-                        <td className="py-4 px-4 font-extrabold text-slate-900">
-                          {formatCurrency(p.price)}
-                        </td>
-                        <td className="py-4 px-4 font-bold text-slate-700">
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${p.stock > 10 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                            {p.stock} units
-                          </span>
-                        </td>
-                        <td className="py-4 px-4 font-semibold text-slate-700">⭐ {p.rating}</td>
-                        <td className="py-4 px-6 text-right text-slate-500 font-medium">
-                          {new Date(p.createdAt).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <VendorProductsSection
+            products={products}
+            loadingData={loadingData}
+            onOpenAddModal={() => setIsAddModalOpen(true)}
+          />
         )}
 
-        {/* Tab 2: Sub-Orders Table */}
         {activeTab === 'orders' && (
-          <div className="space-y-4">
-            {loadingData ? (
-              <div className="p-12 text-center text-slate-500 bg-white rounded-3xl border border-slate-200">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-600" />
-                <p className="text-xs font-semibold">Loading assigned sub-orders...</p>
-              </div>
-            ) : subOrders.length === 0 ? (
-              <div className="p-12 text-center text-slate-500 bg-white rounded-3xl border border-slate-200 space-y-2">
-                <Truck className="w-10 h-10 text-slate-300 mx-auto" />
-                <h3 className="text-sm font-bold text-slate-800">No sub-orders assigned yet</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
-                  When customers purchase your items, sub-orders dispatched from your warehouse will appear here for fulfillment.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {subOrders.map((so) => (
-                  <SubOrderCard
-                    key={so.id}
-                    subOrder={so}
-                    onUpdateFulfillment={handleUpdateFulfillment}
-                    isFulfilling={fulfillingId === so.id}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          <VendorOrdersSection
+            subOrders={subOrders}
+            loadingData={loadingData}
+            onUpdateFulfillment={handleUpdateFulfillment}
+            fulfillingId={fulfillingId}
+          />
         )}
 
-        {/* Tab 3: Reviews & Comments Analytics */}
+        {activeTab === 'category-requests' && (
+          <VendorCategoryRequestsSection
+            categoryRequests={categoryRequests}
+            loadingData={loadingData}
+            onOpenCategoryRequestModal={() => setIsCategoryRequestModalOpen(true)}
+            onDeleteCategoryRequest={handleDeleteCategoryRequest}
+          />
+        )}
+
         {activeTab === 'reviews' && <VendorReviewsSection />}
 
-        {/* Tab 4: Sales & Orders Analytics */}
         {activeTab === 'sales' && <VendorSalesAnalyticsSection />}
 
-        {/* Tab 5: Special Occasion Offers & Discounts */}
         {activeTab === 'offers' && <VendorOffersSection vendorProducts={products} />}
       </main>
 
@@ -439,6 +359,13 @@ export default function VendorDashboardPage() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onProductCreated={fetchVendorData}
+      />
+
+      {/* Request Category Modal */}
+      <RequestCategoryModal
+        isOpen={isCategoryRequestModalOpen}
+        onClose={() => setIsCategoryRequestModalOpen(false)}
+        onRequestSubmitted={fetchVendorData}
       />
     </div>
   );

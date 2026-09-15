@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Modal } from '@/components/common/Modal';
+import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select } from '@/components/common/Select';
+import { DateTimePicker } from '@/components/common/DateTimePicker';
 import { Tag, Sparkles, Calendar, Layers, Package, Loader2, AlertCircle } from 'lucide-react';
 
 interface CategoryOption {
@@ -152,20 +153,14 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="2xl">
+    <Flyout
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create Special Occasion Offer"
+      subtitle="Publish promotional discounts for products or categories with custom valid dates"
+      maxWidth="2xl"
+    >
       <div className="space-y-5">
-        <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-md shadow-indigo-600/25">
-            <Tag className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-900">Create Special Occasion Offer</h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Publish promotional discounts for products or categories with custom valid dates
-            </p>
-          </div>
-        </div>
-
         {error && (
           <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-600 font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -267,20 +262,18 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
 
           {/* Validity Period: Start & End Date */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-            <Input
+            <DateTimePicker
               label="Offer Start Date & Time *"
-              type="datetime-local"
               required
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(val) => setStartDate(val)}
             />
 
-            <Input
+            <DateTimePicker
               label="Offer End Date & Time *"
-              type="datetime-local"
               required
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(val) => setEndDate(val)}
             />
           </div>
 
@@ -291,30 +284,8 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
             onChange={(e) => setNote(e.target.value)}
             placeholder="e.g. Apply code FESTIVE20 at checkout for instant savings!"
           />
-
-          {/* Modal Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-            <Button variant="ghost" size="md" onClick={onClose} type="button">
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Publishing...
-                </span>
-              ) : (
-                'Publish Offer & Discount'
-              )}
-            </Button>
-          </div>
         </form>
       </div>
-    </Modal>
+    </Flyout>
   );
 };

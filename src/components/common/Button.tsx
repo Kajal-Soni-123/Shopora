@@ -15,15 +15,15 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-lg shadow-indigo-500/25 border border-indigo-500/30',
+    'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 border border-indigo-500/30',
   secondary:
-    'bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 shadow-sm',
+    'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200/80 shadow-xs font-semibold',
   outline:
-    'bg-transparent hover:bg-slate-800/60 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600',
+    'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 hover:border-slate-300 shadow-xs font-semibold',
   danger:
-    'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/25 border border-rose-500/30',
+    'bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/20 border border-rose-500/30',
   ghost:
-    'bg-transparent hover:bg-slate-800/50 text-slate-400 hover:text-white border border-transparent',
+    'bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-transparent font-semibold',
 };
 
 const sizeStyles: Record<ButtonSize, string> = {

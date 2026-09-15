@@ -4,7 +4,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
 
 export const metadata: Metadata = {
-  title: 'Shopora | Premier Global Marketplace',
+  title: 'Shopora',
   description: 'Full-stack Shopora e-commerce platform with Next.js App Router, Tailwind CSS, PostgreSQL, and multi-vendor sub-order fulfillment.',
   icons: {
     icon: '/icon.svg',

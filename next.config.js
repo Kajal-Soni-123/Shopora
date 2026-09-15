@@ -16,4 +16,6 @@ const nextConfig = {
   },
 };
 
+// Force Next.js server module cache refresh for updated Prisma schema delegates
 module.exports = nextConfig;
+

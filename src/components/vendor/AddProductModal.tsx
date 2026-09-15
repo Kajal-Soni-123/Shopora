@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Modal } from '@/components/common/Modal';
+import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Select, SelectOption } from '@/components/common/Select';
+import { buildCategoryHierarchyOptions } from '@/lib/categoryUtils';
 import { Input } from '@/components/common/Input';
 import { Textarea } from '@/components/common/Textarea';
 import { ImageUploader } from '@/components/common/ImageUploader';
@@ -149,56 +150,83 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     }
   };
 
-  const categoryOptions: SelectOption[] = categories.map((c) => ({
-    value: c.id,
-    label: c.name,
-  }));
+  const categoryOptions: SelectOption[] = buildCategoryHierarchyOptions(categories, null);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="xl">
+    <Flyout
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Add New Catalog Product"
+      subtitle="Publish a new product with category specifications and inventory details"
+      maxWidth="2xl"
+      footer={
+        <>
+          <Button variant="outline" size="md" onClick={onClose} type="button">
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            type="submit"
+            form="add-product-form"
+            disabled={loading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/20"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Publishing...
+              </span>
+            ) : (
+              'Publish Product'
+            )}
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-5">
-        <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-md shadow-indigo-600/25">
-            <Sparkles className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-900">Publish New Product</h2>
-            <p className="text-xs text-slate-500 font-medium">Add a new item to your boutique store catalog</p>
-          </div>
-        </div>
-
         {error && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-600 font-semibold">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="add-product-form" onSubmit={handleSubmit} className="space-y-5">
+          {/* CATEGORY SELECTOR */}
+          <div className="space-y-1.5">
+            <Select
+              label="Select Target Product Category *"
+              options={buildCategoryHierarchyOptions(categories)}
+              value={category}
+              onChange={(val) => {
+                setCategory(val);
+                setAttributes({});
+              }}
+            />
+          </div>
+
           {/* Title */}
           <Input
             label="Product Title *"
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. AeroShield Waterproof Parka v2"
-            icon={<Package className="w-4 h-4" />}
+            placeholder="e.g. Ergonomic Mesh High-Back Chair"
           />
 
-          {/* Price & Stock Row */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Pricing & Stock */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
-              label="Price ($ USD) *"
+              label="Retail Price ($) *"
               type="number"
               step="0.01"
               required
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              placeholder="249.00"
+              placeholder="99.99"
               icon={<DollarSign className="w-4 h-4" />}
             />
-
             <Input
-              label="Stock Quantity *"
+              label="Inventory Stock Quantity *"
               type="number"
               required
               value={stock}
@@ -208,18 +236,18 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
             />
           </div>
 
-          {/* Custom Select Box for Category */}
-          {categoryOptions.length > 0 && (
-            <Select
-              label="Category *"
-              options={categoryOptions}
-              value={category}
-              onChange={(val) => {
-                setCategory(val);
-                setAttributes({}); // Reset attributes on category switch
-              }}
-              icon={<Tag className="w-4 h-4" />}
-            />
+          {/* SUB-ORDER split alert */}
+          {selectedCategoryObj && (
+            <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+              <div className="flex items-center gap-2 text-xs font-bold text-purple-700">
+                <Tag className="w-4 h-4 text-purple-600" />
+                <span>Warehouse Sub-Order Partitioning</span>
+              </div>
+              <p className="text-[11px] text-purple-800 mt-1 font-medium">
+                This item will be automatically categorized under{' '}
+                <strong className="text-purple-900">{selectedCategoryObj.name}</strong> and split into your dedicated warehouse sub-orders upon customer checkout.
+              </p>
+            </div>
           )}
 
           {/* DYNAMIC CATEGORY CUSTOM FIELDS SECTION */}
@@ -294,30 +322,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Describe materials, technical features, and sizing..."
           />
-
-          {/* Action Buttons */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
-            <Button variant="ghost" size="md" onClick={onClose} type="button">
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/20"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Publishing...
-                </span>
-              ) : (
-                'Publish Product'
-              )}
-            </Button>
-          </div>
         </form>
       </div>
-    </Modal>
+    </Flyout>
   );
 };

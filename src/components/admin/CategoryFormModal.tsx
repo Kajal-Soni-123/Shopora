@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Modal } from '@/components/common/Modal';
+import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import { Select, SelectOption } from '@/components/common/Select';
@@ -211,24 +211,41 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} maxWidth="2xl">
+    <Flyout
+      isOpen={isOpen}
+      onClose={onClose}
+      title={editingCategory ? 'Edit Category & Dynamic Fields' : 'Create Category & Dynamic Fields'}
+      subtitle={
+        editingCategory
+          ? 'Modify category details and customize form inputs'
+          : 'Define custom form inputs required for products in this category'
+      }
+      maxWidth="2xl"
+      footer={
+        <>
+          <Button variant="outline" size="md" onClick={onClose} type="button">
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            type="submit"
+            form="admin-category-form"
+            disabled={modalLoading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/20"
+          >
+            {modalLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : editingCategory ? (
+              'Update Category & Fields'
+            ) : (
+              'Save Category & Fields'
+            )}
+          </Button>
+        </>
+      }
+    >
       <div className="space-y-5">
-        <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-          <div className="p-2.5 bg-indigo-600 rounded-2xl shadow-md shadow-indigo-600/25">
-            <ListPlus className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-900">
-              {editingCategory ? 'Edit Category & Dynamic Fields' : 'Create Category & Dynamic Fields'}
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              {editingCategory
-                ? 'Modify category details and customize form inputs'
-                : 'Define custom form inputs required for products in this category'}
-            </p>
-          </div>
-        </div>
-
         {modalError && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-600 font-semibold">
             {modalError}
@@ -257,7 +274,7 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form id="admin-category-form" onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               label="Category Name *"
@@ -316,7 +333,7 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
 
               <Button
                 type="button"
-                variant="secondary"
+                variant="outline"
                 size="sm"
                 onClick={handleAddFieldSpec}
                 leftIcon={<Plus className="w-4 h-4" />}
@@ -363,30 +380,8 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
               </div>
             )}
           </div>
-
-          {/* Form Action */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
-            <Button variant="ghost" size="md" onClick={onClose} type="button">
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              type="submit"
-              disabled={modalLoading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/20"
-            >
-              {modalLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : editingCategory ? (
-                'Update Category & Fields'
-              ) : (
-                'Save Category & Fields'
-              )}
-            </Button>
-          </div>
         </form>
       </div>
-    </Modal>
+    </Flyout>
   );
 };

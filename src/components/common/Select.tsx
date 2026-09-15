@@ -97,9 +97,33 @@ export const Select: React.FC<SelectProps> = ({
                       : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 truncate">
+                  <div className="flex items-center gap-2 truncate text-xs">
                     {option.icon && <span className="text-slate-400">{option.icon}</span>}
-                    <span>{option.label}</span>
+                    {option.label.includes(' > ') ? (
+                      <span className="flex items-center gap-1.5 truncate">
+                        {option.label.split(' > ').map((part, i, arr) => {
+                          const isLast = i === arr.length - 1;
+                          return (
+                            <React.Fragment key={i}>
+                              <span
+                                className={
+                                  isLast
+                                    ? isSelected
+                                      ? 'font-black text-indigo-700'
+                                      : 'font-extrabold text-slate-900'
+                                    : 'font-medium text-slate-400 text-[11px]'
+                                }
+                              >
+                                {part}
+                              </span>
+                              {!isLast && <span className="text-slate-300 text-[10px] font-bold">›</span>}
+                            </React.Fragment>
+                          );
+                        })}
+                      </span>
+                    ) : (
+                      <span className={isSelected ? 'font-bold' : ''}>{option.label}</span>
+                    )}
                   </div>
                   {isSelected && <Check className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
                 </button>

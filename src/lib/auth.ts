@@ -69,6 +69,13 @@ export async function getSessionUser(): Promise<UserPayload | null> {
 }
 
 /**
+ * Alias for getSessionUser to retrieve current session user payload.
+ */
+export async function getAuthUser(req?: any): Promise<UserPayload | null> {
+  return await getSessionUser();
+}
+
+/**
  * Set HTTP-only auth token cookie on a NextResponse object.
  */
 export function setAuthCookie(response: NextResponse, token: string): void {

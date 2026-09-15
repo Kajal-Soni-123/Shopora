@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CreditCard, ShieldCheck, Truck, Warehouse, CheckCircle2, ArrowRight, Lock } from 'lucide-react';
+import { CreditCard, ShieldCheck, Truck, Warehouse, CheckCircle2, ArrowRight } from 'lucide-react';
 import { CartItem, Order, INITIAL_VENDORS } from '@/lib/data';
 import { formatCurrency, groupItemsByVendor, calculateOrderTotals } from '@/lib/utils';
 import { PAYMENT_METHODS } from '@/lib/constants';
-import { Modal } from '@/components/common/Modal';
+import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
 
@@ -63,7 +63,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
       });
 
       const result = await res.json();
-      // Handle both standardized ApiResponse format (result.data.order) and legacy envelope
       const order = result.data?.order || result.order;
       if (result.success && order) {
         onOrderSuccess(order);
@@ -79,27 +78,70 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   };
 
   return (
-    <Modal
+    <Flyout
       isOpen={isOpen}
       onClose={onClose}
       maxWidth="2xl"
       title={
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center text-sm font-extrabold">
+          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center text-sm font-extrabold shrink-0">
             {step}
           </div>
           <div>
-            <span className="text-base font-extrabold text-slate-900 block">
+            <span className="text-base font-extrabold text-slate-900 block leading-tight">
               {step === 1 ? 'Shipping & Sub-Order Breakdown' : 'Payment & Final Confirmation'}
             </span>
             <span className="text-xs text-slate-500 font-medium">
-              Step {step} of 2 • Next.js App Router API & PostgreSQL Partitioning
+              Step {step} of 2 • Multi-Vendor Order Partitioning
             </span>
           </div>
         </div>
       }
+      footer={
+        <div className="flex items-center justify-between w-full">
+          {step === 2 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={() => setStep(1)}
+            >
+              Back to Details
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+          )}
+
+          <Button
+            type="submit"
+            form="checkout-form"
+            variant="primary"
+            size="md"
+            isLoading={isSubmitting}
+            rightIcon={
+              step === 1 ? (
+                <ArrowRight className="w-4 h-4" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4" />
+              )
+            }
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25"
+          >
+            {step === 1
+              ? 'Continue to Payment'
+              : `Place Order (${formatCurrency(subtotal)})`}
+          </Button>
+        </div>
+      }
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form id="checkout-form" onSubmit={handleSubmit} className="space-y-6">
         {step === 1 ? (
           <div className="space-y-5">
             {/* Form Inputs */}
@@ -145,7 +187,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
             </div>
 
             {/* Sub-Orders Breakdown Preview */}
-            <div className="space-y-3 pt-2">
+            <div className="space-y-3 pt-2 border-t border-slate-100">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-extrabold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
                   <Truck className="w-4 h-4 text-purple-600" />
@@ -156,7 +198,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                 </Badge>
               </div>
 
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                 {Object.entries(itemsByVendor).map(([vendorId, vendorItems], idx) => {
                   const vendor = INITIAL_VENDORS.find((v) => v.id === vendorId);
                   const vendorSubtotal = vendorItems.reduce(
@@ -237,44 +279,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
             </div>
           </div>
         )}
-
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-          {step === 2 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={() => setStep(1)}
-              className="border-slate-200 text-slate-700 hover:bg-slate-100"
-            >
-              Back to Details
-            </Button>
-          ) : (
-            <div />
-          )}
-
-          <Button
-            type="submit"
-            variant="primary"
-            size="md"
-            isLoading={isSubmitting}
-            rightIcon={
-              step === 1 ? (
-                <ArrowRight className="w-4 h-4" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )
-            }
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25"
-          >
-            {step === 1
-              ? 'Continue to Payment'
-              : `Place Order & Split Sub-Orders (${formatCurrency(subtotal)})`}
-          </Button>
-        </div>
       </form>
-    </Modal>
+    </Flyout>
   );
 });
 
