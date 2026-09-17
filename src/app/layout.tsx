@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { AuthModal } from '@/components/auth/AuthModal';
+import { LoginRequiredModal } from '@/components/auth/LoginRequiredModal';
 
 export const metadata: Metadata = {
   title: 'Shopora',
@@ -24,6 +25,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <AuthModal />
+          <LoginRequiredModal />
         </AuthProvider>
       </body>
     </html>

@@ -63,12 +63,16 @@ export async function PUT(request: Request) {
       return ApiResponse.notFound('Sub-order not found or unauthorized.');
     }
 
+    const validStatuses = ['PENDING', 'CONFIRMED', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'];
+    const newStatus = status && validStatuses.includes(status) ? status : existingSubOrder.status;
+
     const updatedSubOrder = await prisma.subOrder.update({
       where: { id: subOrderId },
       data: {
-        status: status || 'SHIPPED',
-        trackingNumber: trackingNumber || existingSubOrder.trackingNumber,
-        shippingCarrier: shippingCarrier || existingSubOrder.shippingCarrier,
+        status: newStatus,
+        trackingNumber: trackingNumber !== undefined ? trackingNumber : existingSubOrder.trackingNumber,
+        shippingCarrier: shippingCarrier !== undefined ? shippingCarrier : existingSubOrder.shippingCarrier,
+        ...(newStatus === 'DELIVERED' ? { deliveredAt: new Date().toISOString() } : {}),
       },
       include: {
         order: true,

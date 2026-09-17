@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { ApiResponse } from '@/lib/api-response';
+import { getDescendantCategoryIds } from '@/lib/categoryUtils';
 
 export async function GET(request: Request) {
   try {
@@ -13,10 +14,27 @@ export async function GET(request: Request) {
     const where: any = {};
 
     if (category && category !== 'all') {
-      where.OR = [
-        { categoryId: category },
-        { category: { slug: category } },
-      ];
+      const allCategories = await prisma.category.findMany({
+        select: { id: true, name: true, slug: true, parentId: true },
+      });
+
+      const catParamLower = category.toLowerCase().trim();
+      const targetCategory = allCategories.find(
+        (c) =>
+          c.id === category ||
+          c.slug.toLowerCase() === catParamLower ||
+          c.name.toLowerCase() === catParamLower
+      );
+
+      if (targetCategory) {
+        const matchingCategoryIds = getDescendantCategoryIds(targetCategory.id, allCategories);
+        where.categoryId = { in: matchingCategoryIds };
+      } else {
+        where.OR = [
+          { categoryId: category },
+          { category: { slug: category } },
+        ];
+      }
     }
 
     if (query && query.trim().length > 0) {

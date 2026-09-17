@@ -18,6 +18,10 @@ export async function GET() {
         name: true,
         email: true,
         role: true,
+        phone: true,
+        homeAddress: true,
+        workAddress: true,
+        primaryAddressType: true,
         vendorId: true,
         vendor: {
           select: {

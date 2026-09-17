@@ -4,10 +4,12 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { Order } from '@/lib/data';
 import { AddProductModal } from '@/components/vendor/AddProductModal';
 import { RequestCategoryModal } from '@/components/vendor/RequestCategoryModal';
 import { VendorProductsSection, VendorProduct } from '@/components/vendor/VendorProductsSection';
-import { VendorOrdersSection, VendorSubOrder } from '@/components/vendor/VendorOrdersSection';
+import { VendorOrdersSection } from '@/components/vendor/VendorOrdersSection';
+import { VendorSubOrderData } from '@/components/vendor/SubOrderCard';
 import { VendorCategoryRequestsSection, VendorCategoryRequest } from '@/components/vendor/VendorCategoryRequestsSection';
 import { VendorReviewsSection } from '@/components/vendor/VendorReviewsSection';
 import VendorSalesAnalyticsSection from '@/components/vendor/VendorSalesAnalyticsSection';
@@ -34,7 +36,7 @@ export default function VendorDashboardPage() {
   const { user, loading: authLoading, openAuthModal } = useAuth();
 
   const [products, setProducts] = useState<VendorProduct[]>([]);
-  const [subOrders, setSubOrders] = useState<VendorSubOrder[]>([]);
+  const [subOrders, setSubOrders] = useState<VendorSubOrderData[]>([]);
   const [categoryRequests, setCategoryRequests] = useState<VendorCategoryRequest[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [activeTab, setActiveTab] = useState<
@@ -59,18 +61,21 @@ export default function VendorDashboardPage() {
         fetch('/api/vendor/category-requests'),
       ]);
 
+      let dbSubOrders: any[] = [];
       if (resProducts.ok) {
         const dataP = await resProducts.json();
         setProducts(dataP.data || []);
       }
       if (resOrders.ok) {
         const dataO = await resOrders.json();
-        setSubOrders(dataO.data || []);
+        dbSubOrders = dataO.data || [];
       }
       if (resRequests.ok) {
         const dataR = await resRequests.json();
         setCategoryRequests(dataR.data || []);
       }
+
+      setSubOrders(dbSubOrders);
     } catch (err) {
       console.error('Error fetching vendor data:', err);
     } finally {
@@ -87,25 +92,88 @@ export default function VendorDashboardPage() {
     }
   }, [user, authLoading]);
 
-  const handleUpdateFulfillment = async (subOrderId: string, tracking: string, carrier: string) => {
+  const handleUpdateStatus = async (
+    subOrderId: string,
+    status: string,
+    trackingNumber: string,
+    shippingCarrier: string,
+    note?: string
+  ) => {
     try {
       setFulfillingId(subOrderId);
-      const res = await fetch('/api/vendor/orders', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subOrderId,
-          status: 'SHIPPED',
-          trackingNumber: tracking,
-          shippingCarrier: carrier,
-        }),
-      });
 
-      if (res.ok) {
-        await fetchVendorData();
+      // 1. Send update to API
+      try {
+        await fetch('/api/vendor/orders', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subOrderId,
+            status,
+            trackingNumber,
+            shippingCarrier,
+            note,
+          }),
+        });
+      } catch (err) {
+        console.warn('Backend API update failed, continuing with local sync:', err);
       }
+
+      // 2. Sync update to localStorage['shopora_orders']
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('shopora_orders');
+        if (stored) {
+          try {
+            const parsedOrders: Order[] = JSON.parse(stored);
+            const statusLabels: Record<string, string> = {
+              PENDING: 'Order Placed',
+              CONFIRMED: 'Order Confirmed',
+              PACKED: 'Package Packed',
+              SHIPPED: 'Package Shipped',
+              OUT_FOR_DELIVERY: 'Out for Delivery',
+              DELIVERED: 'Delivered to Customer',
+              CANCELLED: 'Cancelled',
+            };
+
+            const updatedOrders = parsedOrders.map((order) => {
+              const updatedSubOrders = order.subOrders.map((sub) => {
+                if (sub.id === subOrderId) {
+                  const existingHistory = sub.statusHistory || [];
+                  const newEvent = {
+                    status,
+                    label: statusLabels[status] || status,
+                    timestamp: new Date().toISOString(),
+                    note: note || `Sub-order status updated to ${statusLabels[status] || status} by merchant vendor.`,
+                    completed: true,
+                  };
+
+                  return {
+                    ...sub,
+                    status: status as any,
+                    trackingNumber: trackingNumber || sub.trackingNumber,
+                    shippingCarrier: shippingCarrier || sub.shippingCarrier,
+                    statusHistory: [...existingHistory.filter((h) => h.status !== status), newEvent],
+                  };
+                }
+                return sub;
+              });
+
+              return {
+                ...order,
+                subOrders: updatedSubOrders,
+              };
+            });
+
+            localStorage.setItem('shopora_orders', JSON.stringify(updatedOrders));
+          } catch (e) {
+            console.error('Error updating localStorage orders:', e);
+          }
+        }
+      }
+
+      await fetchVendorData();
     } catch (err) {
-      console.error('Fulfillment update error:', err);
+      console.error('Status update error:', err);
     } finally {
       setFulfillingId(null);
     }
@@ -326,6 +394,7 @@ export default function VendorDashboardPage() {
             products={products}
             loadingData={loadingData}
             onOpenAddModal={() => setIsAddModalOpen(true)}
+            onProductUpdated={fetchVendorData}
           />
         )}
 
@@ -333,8 +402,8 @@ export default function VendorDashboardPage() {
           <VendorOrdersSection
             subOrders={subOrders}
             loadingData={loadingData}
-            onUpdateFulfillment={handleUpdateFulfillment}
-            fulfillingId={fulfillingId}
+            onUpdateStatus={handleUpdateStatus}
+            updatingId={fulfillingId}
           />
         )}
 

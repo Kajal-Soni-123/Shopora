@@ -57,3 +57,28 @@ export function buildCategoryHierarchyOptions(
 
   return [...options, ...sortedCatOptions];
 }
+
+/**
+ * Recursively resolves all descendant category IDs (children, grandchildren, etc.) for a given category ID.
+ * Returns an array containing the target category ID itself plus all of its descendant IDs.
+ */
+export function getDescendantCategoryIds(
+  targetId: string,
+  categories: { id: string; parentId?: string | null }[]
+): string[] {
+  const descendantIds = new Set<string>([targetId]);
+
+  function collectChildren(parentId: string) {
+    const children = categories.filter((c) => c.parentId === parentId);
+    for (const child of children) {
+      if (!descendantIds.has(child.id)) {
+        descendantIds.add(child.id);
+        collectChildren(child.id);
+      }
+    }
+  }
+
+  collectChildren(targetId);
+  return Array.from(descendantIds);
+}
+

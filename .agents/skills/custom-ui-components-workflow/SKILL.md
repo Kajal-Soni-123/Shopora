@@ -8,7 +8,14 @@ description: Standardized custom UI component pattern (Select, Input, Checkbox, 
 This skill defines the mandatory UI component patterns for form fields, inputs, dropdowns, buttons, and modals across the Shopora platform.
 
 > [!IMPORTANT]
-> **NEVER use raw HTML form elements (`<select>`, `<input>`, `<textarea>`, `<input type="checkbox">`, `<input type="radio">`) in user-facing components or modals.** Always use the application-themed components located at `@/components/common/`.
+> **STRICT MANDATE: NEVER USE DEFAULT / RAW HTML FORM ELEMENTS.**
+> - **DO NOT use native HTML `<select>`, `<input>`, `<textarea>`, `<input type="checkbox">`, `<input type="radio">`, or native `<button>`** elements in any user-facing components, pages, or modals across the application.
+> - **ALWAYS use the custom themed components** located at `@/components/common/` (`<Select />`, `<Input />`, `<Textarea />`, `<Checkbox />`, `<Radio />`, `<Button />`).
+> - Every form input must follow the Shopora Nordic Light design system using the components in `@/components/common/`.
+>
+> **STRICT MANDATE: MANDATORY SKELETON LOADING STATES DURING API FETCH.**
+> - **ALWAYS render animated Skeleton loading components** (`<ProductCardSkeleton />`, `<OrderCardSkeleton />`, `<Skeleton />`) whenever API requests are pending.
+> - **NEVER show "No items found", "No products found", or empty fallbacks** while data is still loading/pending. Empty state UI must ONLY render after the API request has completely resolved and returned 0 records.
 
 ---
 

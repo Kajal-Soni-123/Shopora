@@ -7,6 +7,10 @@ export interface User {
   name: string;
   email: string;
   role: string;
+  phone?: string | null;
+  homeAddress?: string | null;
+  workAddress?: string | null;
+  primaryAddressType?: string | null;
   vendorId?: string | null;
   vendor?: {
     id: string;
@@ -31,11 +35,16 @@ interface AuthContextType {
   loading: boolean;
   isAuthModalOpen: boolean;
   authModalTab: 'login' | 'signup';
+  isLoginRequiredModalOpen: boolean;
   openAuthModal: (tab?: 'login' | 'signup') => void;
   closeAuthModal: () => void;
+  openLoginRequiredModal: () => void;
+  closeLoginRequiredModal: () => void;
+  requireAuth: (action: () => void) => boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signup: (options: SignupOptions) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  updateUser: (updatedUser: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'signup'>('login');
+  const [isLoginRequiredModalOpen, setIsLoginRequiredModalOpen] = useState<boolean>(false);
 
   const openAuthModal = (tab: 'login' | 'signup' = 'login') => {
     setAuthModalTab(tab);
@@ -53,6 +63,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const closeAuthModal = () => {
     setIsAuthModalOpen(false);
+  };
+
+  const openLoginRequiredModal = () => {
+    setIsLoginRequiredModalOpen(true);
+  };
+
+  const closeLoginRequiredModal = () => {
+    setIsLoginRequiredModalOpen(false);
+  };
+
+  const requireAuth = (action: () => void): boolean => {
+    if (user) {
+      action();
+      return true;
+    }
+    setIsLoginRequiredModalOpen(true);
+    return false;
   };
 
   // Fetch active session user on mount
@@ -88,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setUser(data.data);
       closeAuthModal();
+      closeLoginRequiredModal();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'An unexpected error occurred' };
@@ -107,6 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setUser(data.data);
       closeAuthModal();
+      closeLoginRequiredModal();
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'An unexpected error occurred' };
@@ -117,9 +146,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
       setUser(null);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('shopora_orders');
+        localStorage.removeItem('latest_shopora_order');
+        localStorage.removeItem('latest_nexus_order');
+        localStorage.removeItem('shopora_cart');
+        window.location.href = '/';
+      }
     } catch (err) {
       console.error('Failed to logout:', err);
     }
+  };
+
+  const updateUser = (updatedUser: User) => {
+    setUser(updatedUser);
   };
 
   return (
@@ -129,11 +169,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isAuthModalOpen,
         authModalTab,
+        isLoginRequiredModalOpen,
         openAuthModal,
         closeAuthModal,
+        openLoginRequiredModal,
+        closeLoginRequiredModal,
+        requireAuth,
         login,
         signup,
         logout,
+        updateUser,
       }}
     >
       {children}

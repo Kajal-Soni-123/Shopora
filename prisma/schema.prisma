@@ -10,32 +10,38 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("CUSTOMER") // CUSTOMER, ADMIN, VENDOR
-  avatar    String?
-  vendorId  String?
-  vendor    Vendor?  @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  orders    Order[]
-  reviews   Review[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String       @id @default(cuid())
+  name               String
+  email              String       @unique
+  password           String
+  role               String       @default("CUSTOMER") // CUSTOMER, ADMIN, VENDOR
+  avatar             String?
+  phone              String?
+  homeAddress        String?
+  workAddress        String?
+  primaryAddressType String?      @default("HOME") // HOME, WORK
+  vendorId           String?
+  vendor             Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  orders             Order[]
+  cartItems          CartItem[]
+  reviews            Review[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }
 
 model Vendor {
-  id                String     @id @default(cuid())
+  id                String            @id @default(cuid())
   name              String
-  email             String     @unique
+  email             String            @unique
   warehouseLocation String
-  rating            Float      @default(4.8)
+  rating            Float             @default(4.8)
   users             User[]
   products          Product[]
   subOrders         SubOrder[]
   categoryRequests  CategoryRequest[]
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  offers            Offer[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 }
 
 model CategoryRequest {
@@ -81,9 +87,24 @@ model Product {
   categoryId   String
   category     Category    @relation(fields: [categoryId], references: [id])
   orderItems   OrderItem[]
+  cartItems    CartItem[]
   reviews      Review[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity   Int      @default(1)
+  attributes Json?    // Selected color, size, etc.
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("cart_items")
 }
 
 model Review {
@@ -107,9 +128,12 @@ model Order {
   user            User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   customerName    String
   customerEmail   String
+  customerPhone   String?
   shippingAddress String
   paymentMethod   String     @default("CREDIT_CARD")
   paymentStatus   String     @default("PAID") // PENDING, PAID, FAILED, REFUNDED
+  transactionId   String?
+  paymentDetails  Json?
   totalAmount     Float
   aggregateStatus String     @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED
   subOrders       SubOrder[]
@@ -128,17 +152,41 @@ model SubOrder {
   subtotal        Float
   trackingNumber  String?
   shippingCarrier String?
+  expectedDelivery String?
+  statusHistory   Json?
   items           OrderItem[]
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 }
 
 model OrderItem {
-  id         String   @id @default(cuid())
-  subOrderId String
-  subOrder   SubOrder @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-  quantity   Int
-  price      Float
+  id                 String   @id @default(cuid())
+  subOrderId         String
+  subOrder           SubOrder @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product  @relation(fields: [productId], references: [id])
+  quantity           Int
+  price              Float
+  selectedAttributes Json?
+}
+
+model Offer {
+  id            String   @id @default(cuid())
+  title         String
+  discountType  String   // PERCENTAGE, FIXED_AMOUNT
+  discountValue Float
+  scope         String   @default("ALL_PRODUCTS") // ALL_PRODUCTS, CATEGORY, SPECIFIC_PRODUCTS
+  categoryId    String?
+  categoryName  String?
+  productIds    String[] @default([])
+  productTitles String[] @default([])
+  startDate     DateTime
+  endDate       DateTime
+  note          String?
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("offers")
 }

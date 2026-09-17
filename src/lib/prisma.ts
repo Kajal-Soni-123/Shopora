@@ -33,7 +33,10 @@ function getFreshPrismaClient(): PrismaClient {
 
 export function getPrisma(): PrismaClient {
   let instance = globalForPrisma.prisma;
-  if (!instance || typeof (instance as any).categoryRequest === 'undefined') {
+  const userFields = (instance as any)?._dmmf?.modelMap?.User?.fields;
+  const hasPhoneField = userFields && Array.isArray(userFields) && userFields.some((f: any) => f.name === 'phone');
+
+  if (!instance || typeof (instance as any).categoryRequest === 'undefined' || !hasPhoneField) {
     globalForPrisma.prisma = getFreshPrismaClient();
     instance = globalForPrisma.prisma!;
   }

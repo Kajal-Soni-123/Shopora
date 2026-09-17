@@ -16,6 +16,7 @@ import {
   RefreshCw,
   AlertCircle,
   Check,
+  MapPin,
 } from 'lucide-react';
 import { CartItem, Order, INITIAL_VENDORS } from '@/lib/data';
 import { formatCurrency, groupItemsByVendor, calculateOrderTotals } from '@/lib/utils';
@@ -23,6 +24,8 @@ import { PAYMENT_METHODS } from '@/lib/constants';
 import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
+import { useAuth } from '@/context/AuthContext';
+import { AddressMapModal } from '@/components/AddressMapModal';
 import {
   detectCardBrand,
   formatCardNumber,
@@ -46,8 +49,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   items,
   onOrderSuccess,
 }) => {
+  const { user } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMapModalOpen, setIsMapModalOpen] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpInput, setOtpInput] = useState('123456');
   const [otpError, setOtpError] = useState('');
@@ -64,12 +69,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
 
   // Shipping & Contact State
   const [formData, setFormData] = useState({
-    name: 'Alex Morgan',
-    email: 'alex.morgan@example.com',
-    phone: '+1 555-019-2834',
-    address: '742 Evergreen Terrace, Seattle, WA 98101',
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    address: user?.homeAddress || user?.workAddress || '',
     paymentMethod: 'CREDIT_CARD',
   });
+
+  // Sync user profile data (including Primary Address) when user or modal opens
+  React.useEffect(() => {
+    if (isOpen && user) {
+      const primaryAddr =
+        user.primaryAddressType === 'WORK'
+          ? user.workAddress || user.homeAddress || ''
+          : user.homeAddress || user.workAddress || '';
+
+      setFormData((prev) => ({
+        ...prev,
+        name: user.name || prev.name,
+        email: user.email || prev.email,
+        phone: user.phone || prev.phone,
+        address: primaryAddr || prev.address,
+      }));
+    }
+  }, [isOpen, user]);
 
   // Card Payment Details State
   const [cardDetails, setCardDetails] = useState({
@@ -155,6 +178,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
       } else {
         showToast(result.error || 'Failed to place order');
       }
+
     } catch (err) {
       console.error(err);
       showToast('Error finalizing order payment');
@@ -314,7 +338,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
             >
               {step === 1
                 ? 'Continue to Payment'
-                : `Authorize & Pay (${formatCurrency(subtotal)})`}
+                : `Pay (${formatCurrency(subtotal)})`}
             </Button>
           </div>
         }
@@ -382,9 +406,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Shipping Address
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Shipping Address
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsMapModalOpen(true)}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-extrabold flex items-center gap-1 transition-colors hover:underline"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    <span>🗺️ Choose on Map</span>
+                  </button>
+                </div>
                 <input
                   type="text"
                   required
@@ -393,6 +427,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
                 />
               </div>
+
+              {/* Address Map Picker Modal */}
+              <AddressMapModal
+                isOpen={isMapModalOpen}
+                onClose={() => setIsMapModalOpen(false)}
+                initialAddress={formData.address}
+                onSelectAddress={(selectedAddr) =>
+                  setFormData((prev) => ({ ...prev, address: selectedAddr }))
+                }
+              />
 
               {/* Sub-Orders Breakdown Preview */}
               <div className="space-y-3 pt-2 border-t border-slate-100">
@@ -452,11 +496,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                         key={method.id}
                         type="button"
                         onClick={() => setFormData({ ...formData, paymentMethod: method.id })}
-                        className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all ${
-                          isSelected
-                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
+                        className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all ${isSelected
+                          ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                          }`}
                       >
                         <span className="text-xl">{method.icon}</span>
                         <span className="text-center text-[11px]">{method.name}</span>
@@ -633,11 +676,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                         key={bank}
                         type="button"
                         onClick={() => setSelectedBank(bank)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
-                          selectedBank === bank
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${selectedBank === bank
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                          }`}
                       >
                         <span>{bank} Bank</span>
                         {selectedBank === bank && <Check className="w-3.5 h-3.5" />}
@@ -659,11 +701,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                         key={w}
                         type="button"
                         onClick={() => setSelectedWallet(w)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
-                          selectedWallet === w
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${selectedWallet === w
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                          }`}
                       >
                         <span>{w}</span>
                         {selectedWallet === w && <Check className="w-3.5 h-3.5" />}
@@ -692,15 +733,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   <span className="text-indigo-600">{formatCurrency(subtotal)}</span>
                 </div>
               </div>
-
-              {/* Security Banner */}
+              {/* 
+              Security Banner
               <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between text-[11px] text-slate-600 font-medium">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>256-Bit SSL Encrypted & PCI-DSS Compliant</span>
                 </div>
                 <span className="font-extrabold text-indigo-700">Shopora Pay</span>
-              </div>
+              </div> */}
             </div>
           )}
         </form>

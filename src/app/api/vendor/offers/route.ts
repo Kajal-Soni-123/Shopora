@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { ApiResponse } from '@/lib/api-response';
+import { prisma } from '@/lib/prisma';
 
 export interface VendorOfferItem {
   id: string;
@@ -19,36 +20,7 @@ export interface VendorOfferItem {
   createdAt: string;
 }
 
-// In-memory persistent offer store for vendor promotional campaigns
-let vendorOffersStore: VendorOfferItem[] = [
-  {
-    id: 'offer-1',
-    title: 'Festive Season Clearance',
-    discountType: 'PERCENTAGE',
-    discountValue: 20,
-    scope: 'ALL_PRODUCTS',
-    startDate: new Date(Date.now() - 2 * 86400000).toISOString(),
-    endDate: new Date(Date.now() + 10 * 86400000).toISOString(),
-    note: 'Special 20% discount across all store products for the holiday season.',
-    vendorId: 'vendor-1',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'offer-2',
-    title: 'Footwear & Apparel Flash Sale',
-    discountType: 'FIXED_AMOUNT',
-    discountValue: 15,
-    scope: 'CATEGORY',
-    categoryName: 'Footwear',
-    startDate: new Date(Date.now() + 1 * 86400000).toISOString(),
-    endDate: new Date(Date.now() + 5 * 86400000).toISOString(),
-    note: 'Flat $15 off on all footwear purchases.',
-    vendorId: 'vendor-1',
-    createdAt: new Date().toISOString(),
-  },
-];
-
-// GET /api/vendor/offers - Fetch offers for logged-in vendor
+// GET /api/vendor/offers - Fetch offers for logged-in vendor from PostgreSQL
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
@@ -56,18 +28,36 @@ export async function GET() {
       return ApiResponse.unauthorized('Access denied. Merchant Partner authentication required.');
     }
 
-    const offers = vendorOffersStore.filter(
-      (o) => o.vendorId === sessionUser.vendorId || sessionUser.role === 'VENDOR'
-    );
+    const dbOffers = await prisma.offer.findMany({
+      where: { vendorId: sessionUser.vendorId },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    return ApiResponse.success(offers);
+    const formattedOffers = dbOffers.map((o) => ({
+      id: o.id,
+      title: o.title,
+      discountType: o.discountType as 'PERCENTAGE' | 'FIXED_AMOUNT',
+      discountValue: o.discountValue,
+      scope: o.scope as 'ALL_PRODUCTS' | 'CATEGORY' | 'SPECIFIC_PRODUCTS',
+      categoryId: o.categoryId,
+      categoryName: o.categoryName,
+      productIds: o.productIds,
+      productTitles: o.productTitles,
+      startDate: o.startDate.toISOString(),
+      endDate: o.endDate.toISOString(),
+      note: o.note || undefined,
+      vendorId: o.vendorId,
+      createdAt: o.createdAt.toISOString(),
+    }));
+
+    return ApiResponse.success(formattedOffers);
   } catch (error) {
     console.error('Fetch vendor offers error:', error);
     return ApiResponse.serverError('Failed to fetch vendor offers.');
   }
 }
 
-// POST /api/vendor/offers - Create new promotional offer
+// POST /api/vendor/offers - Create new promotional offer in PostgreSQL
 export async function POST(request: Request) {
   try {
     const sessionUser = await getSessionUser();
@@ -109,33 +99,48 @@ export async function POST(request: Request) {
       return ApiResponse.badRequest('End date must be after the start date.');
     }
 
-    const newOffer: VendorOfferItem = {
-      id: `offer-${Date.now()}`,
-      title: title.trim(),
-      discountType,
-      discountValue,
-      scope: scope || 'ALL_PRODUCTS',
-      categoryId: categoryId || null,
-      categoryName: categoryName || null,
-      productIds: productIds || [],
-      productTitles: productTitles || [],
-      startDate: new Date(startDate).toISOString(),
-      endDate: new Date(endDate).toISOString(),
-      note: note ? note.trim() : undefined,
-      vendorId: sessionUser.vendorId,
-      createdAt: new Date().toISOString(),
+    const newOffer = await prisma.offer.create({
+      data: {
+        title: title.trim(),
+        discountType,
+        discountValue,
+        scope: scope || 'ALL_PRODUCTS',
+        categoryId: categoryId || null,
+        categoryName: categoryName || null,
+        productIds: productIds || [],
+        productTitles: productTitles || [],
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        note: note ? note.trim() : null,
+        vendorId: sessionUser.vendorId,
+      },
+    });
+
+    const formattedOffer = {
+      id: newOffer.id,
+      title: newOffer.title,
+      discountType: newOffer.discountType as 'PERCENTAGE' | 'FIXED_AMOUNT',
+      discountValue: newOffer.discountValue,
+      scope: newOffer.scope as 'ALL_PRODUCTS' | 'CATEGORY' | 'SPECIFIC_PRODUCTS',
+      categoryId: newOffer.categoryId,
+      categoryName: newOffer.categoryName,
+      productIds: newOffer.productIds,
+      productTitles: newOffer.productTitles,
+      startDate: newOffer.startDate.toISOString(),
+      endDate: newOffer.endDate.toISOString(),
+      note: newOffer.note || undefined,
+      vendorId: newOffer.vendorId,
+      createdAt: newOffer.createdAt.toISOString(),
     };
 
-    vendorOffersStore.unshift(newOffer);
-
-    return ApiResponse.created(newOffer, 'Promotional offer created successfully!');
+    return ApiResponse.created(formattedOffer, 'Promotional offer created successfully!');
   } catch (error) {
     console.error('Create vendor offer error:', error);
     return ApiResponse.serverError('Failed to create promotional offer.');
   }
 }
 
-// DELETE /api/vendor/offers - Delete an existing offer
+// DELETE /api/vendor/offers - Delete an existing offer from PostgreSQL
 export async function DELETE(request: Request) {
   try {
     const sessionUser = await getSessionUser();
@@ -150,7 +155,12 @@ export async function DELETE(request: Request) {
       return ApiResponse.badRequest('Offer ID is required for deletion.');
     }
 
-    vendorOffersStore = vendorOffersStore.filter((o) => o.id !== offerId);
+    await prisma.offer.deleteMany({
+      where: {
+        id: offerId,
+        ...(sessionUser.role === 'VENDOR' && sessionUser.vendorId ? { vendorId: sessionUser.vendorId } : {}),
+      },
+    });
 
     return ApiResponse.success({ id: offerId }, 'Offer deleted successfully!');
   } catch (error) {

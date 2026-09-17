@@ -34,6 +34,14 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface TrackingEvent {
+  status: string;
+  label: string;
+  timestamp: string;
+  note: string;
+  completed: boolean;
+}
+
 export interface SubOrder {
   id: string;
   subOrderNumber: string;
@@ -43,6 +51,9 @@ export interface SubOrder {
   subtotal: number;
   trackingNumber: string;
   shippingCarrier: string;
+  expectedDelivery: string;
+  deliveredAt?: string;
+  statusHistory: TrackingEvent[];
   items: {
     product: Product;
     quantity: number;
