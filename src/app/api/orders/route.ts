@@ -2,16 +2,24 @@ import { CartItem, Order, SubOrder, INITIAL_VENDORS } from '@/lib/data';
 import { ApiResponse } from '@/lib/api-response';
 import { groupItemsByVendor, generateTrackingNumber } from '@/lib/utils';
 import { SHIPPING_CARRIERS, DEFAULT_VENDOR_FALLBACK } from '@/lib/constants';
+import { sendOrderConfirmationSMS } from '@/lib/twilio';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { items, customerName, customerEmail, shippingAddress, paymentMethod } = body as {
+    const { items, customerName, customerEmail, customerPhone, shippingAddress, paymentMethod, transactionId, paymentDetails } = body as {
       items: CartItem[];
       customerName: string;
       customerEmail: string;
+      customerPhone?: string;
       shippingAddress: string;
       paymentMethod: string;
+      transactionId?: string;
+      paymentDetails?: {
+        method: string;
+        maskedDetails: string;
+        provider?: string;
+      };
     };
 
     if (!items || items.length === 0) {
@@ -27,6 +35,7 @@ export async function POST(request: Request) {
     const orderId = 'ord_' + Math.random().toString(36).substring(2, 9);
     const orderNumber = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
     const createdDate = new Date().toISOString();
+    const finalTransactionId = transactionId || 'pay_' + Math.random().toString(36).substring(2, 11);
 
     const subOrders: SubOrder[] = [];
     let totalAmount = 0;
@@ -73,14 +82,32 @@ export async function POST(request: Request) {
       orderNumber,
       customerName: customerName || 'Alex Morgan',
       customerEmail: customerEmail || 'alex.morgan@example.com',
+      customerPhone: customerPhone || '+1 555-019-2834',
       shippingAddress: shippingAddress || '742 Evergreen Terrace, Seattle, WA 98101',
       paymentMethod: paymentMethod || 'CREDIT_CARD',
       paymentStatus: 'PAID',
+      transactionId: finalTransactionId,
+      paymentDetails: paymentDetails || {
+        method: paymentMethod || 'CREDIT_CARD',
+        maskedDetails: '•••• 4242',
+        provider: 'Shopora Pay',
+      },
       totalAmount,
       aggregateStatus: 'PROCESSING',
       subOrders,
       createdAt: createdDate,
     };
+
+    // Trigger Twilio SMS / WhatsApp Order Notification (Async, non-blocking)
+    if (masterOrder.customerPhone) {
+      sendOrderConfirmationSMS(masterOrder.customerPhone, {
+        orderNumber: masterOrder.orderNumber,
+        customerName: masterOrder.customerName,
+        totalAmount: masterOrder.totalAmount,
+        itemCount: items.length,
+        subOrderCount: subOrders.length,
+      }).catch((err) => console.error('Background Twilio SMS Error:', err));
+    }
 
     return ApiResponse.created({ order: masterOrder }, 'Order created and partitioned successfully');
   } catch (error) {

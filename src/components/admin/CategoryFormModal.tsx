@@ -353,7 +353,7 @@ export const CategoryFormModal: React.FC<CategoryFormModalProps> = ({
             {customFields.length === 0 ? (
               <p className="text-xs text-slate-400 italic">No custom dynamic fields defined yet.</p>
             ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-2 pr-1">
                 {customFields.map((field, idx) => (
                   <div key={idx} className="p-3 bg-white border border-slate-200 rounded-xl text-xs flex items-center justify-between">
                     <div>

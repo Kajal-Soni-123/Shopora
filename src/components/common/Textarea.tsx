@@ -10,9 +10,24 @@ interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, error, helperText, className = '', disabled, ...props }, ref) => {
+    const renderLabel = () => {
+      if (!label) return null;
+      if (label.includes('*')) {
+        const parts = label.split('*');
+        return (
+          <label className="text-xs font-bold text-slate-700 block">
+            {parts[0]}
+            <span className="text-rose-500 font-extrabold ml-0.5">*</span>
+            {parts.slice(1).join('*')}
+          </label>
+        );
+      }
+      return <label className="text-xs font-bold text-slate-700 block">{label}</label>;
+    };
+
     return (
       <div className="space-y-1.5 w-full">
-        {label && <label className="text-xs font-bold text-slate-700 block">{label}</label>}
+        {renderLabel()}
 
         <textarea
           ref={ref}
@@ -26,9 +41,9 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         />
 
         {error ? (
-          <p className="text-[11px] font-semibold text-rose-500">{error}</p>
+          <p className="text-[11px] font-semibold text-rose-500 mt-1">{error}</p>
         ) : helperText ? (
-          <p className="text-[11px] font-medium text-slate-400">{helperText}</p>
+          <p className="text-[11px] font-medium text-slate-400 mt-1">{helperText}</p>
         ) : null}
       </div>
     );

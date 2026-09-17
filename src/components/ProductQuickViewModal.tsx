@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { ShoppingCart, ShieldCheck, Warehouse, RefreshCw, Truck, Star, Send, Loader2, MessageSquare, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ShoppingCart, ShieldCheck, Warehouse, RefreshCw, Truck, Star, Send, Loader2, MessageSquare, AlertCircle, CheckCircle2, Check } from 'lucide-react';
 import { Product } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
 import { Modal } from '@/components/common/Modal';
@@ -10,6 +10,7 @@ import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
 import { RatingStars } from '@/components/common/RatingStars';
 import { useAuth } from '@/context/AuthContext';
+import { getColorStyle } from '@/lib/color-utils';
 
 interface Review {
   id: string;
@@ -39,6 +40,10 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
   const [activeTab, setActiveTab] = useState<'details' | 'reviews'>('details');
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
+
+  // Gallery & Variant Selection State
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
 
   // Review Form State
   const [userRating, setUserRating] = useState(5);
@@ -70,11 +75,15 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
       setSuccessMsg('');
       setCommentText('');
       setUserRating(5);
+      setActiveImageIndex(0);
+      setSelectedVariants({});
       fetchReviews(product.id);
     }
   }, [product]);
 
   if (!product) return null;
+
+  const allImages = Array.from(new Set([product.image, ...(product.images || [])].filter(Boolean)));
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,38 +173,161 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
         {/* Tab 1: Product Overview */}
         {activeTab === 'details' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-            {/* Image Side */}
-            <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
-              <Image
-                src={product.image}
-                alt={product.title}
-                fill
-                sizes="(max-width: 768px) 100vw, 50vw"
-                className="object-cover"
-              />
-              <div className="absolute bottom-4 left-4 z-10">
-                <Badge variant="info" size="sm" className="bg-white/90 backdrop-blur-md text-slate-800 border-slate-200 shadow-sm font-semibold">
-                  <Warehouse className="w-3.5 h-3.5 mr-1 text-indigo-600" />
-                  {product.vendor?.warehouseLocation || 'Central Warehouse'}
-                </Badge>
+            {/* Image & Gallery Side */}
+            <div className="space-y-3">
+              <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
+                <Image
+                  src={allImages[activeImageIndex] || product.image}
+                  alt={product.title}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover transition-all duration-300"
+                />
+                <div className="absolute bottom-4 left-4 z-10">
+                  <Badge variant="info" size="sm" className="bg-white/90 backdrop-blur-md text-slate-800 border-slate-200 shadow-sm font-semibold">
+                    <Warehouse className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+                    {product.vendor?.warehouseLocation || 'Central Warehouse'}
+                  </Badge>
+                </div>
               </div>
+
+              {/* Gallery Thumbnails List */}
+              {allImages.length > 1 && (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {allImages.map((imgUrl, idx) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      onClick={() => setActiveImageIndex(idx)}
+                      className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 ${
+                        activeImageIndex === idx
+                          ? 'border-indigo-600 ring-2 ring-indigo-600/20 scale-105'
+                          : 'border-slate-200 hover:border-slate-400 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <Image src={imgUrl} alt={`Thumbnail ${idx + 1}`} fill sizes="56px" className="object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Details Side */}
+            {/* Details & Variant Selection Side */}
             <div className="flex flex-col justify-between gap-4">
-              <div>
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-                  <span className="font-bold text-indigo-600">{product.vendor?.name || 'Vendor Partner'}</span>
-                  <button onClick={() => setActiveTab('reviews')} className="hover:opacity-80 transition-opacity">
-                    <RatingStars rating={Number(currentAvgRating)} reviewsCount={currentReviewCount} size="sm" />
-                  </button>
+              <div className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                    <span className="font-bold text-indigo-600">{product.vendor?.name || 'Vendor Partner'}</span>
+                    <button onClick={() => setActiveTab('reviews')} className="hover:opacity-80 transition-opacity">
+                      <RatingStars rating={Number(currentAvgRating)} reviewsCount={currentReviewCount} size="sm" />
+                    </button>
+                  </div>
+
+                  <h2 className="text-xl font-extrabold text-slate-900 mb-2">{product.title}</h2>
+                  <p className="text-sm text-slate-600 leading-relaxed font-medium">{product.description}</p>
                 </div>
 
-                <h2 className="text-xl font-extrabold text-slate-900 mb-2">{product.title}</h2>
-                <p className="text-sm text-slate-600 leading-relaxed mb-4 font-medium">{product.description}</p>
+                {/* Category Specifications & Variants (Size, Color, etc.) */}
+                {product.attributes && Object.keys(product.attributes).length > 0 && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                    <span className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider block">
+                      Select Variant & Specifications
+                    </span>
+
+                    <div className="space-y-3">
+                      {Object.entries(product.attributes).map(([attrKey, attrVal]) => {
+                        let optionsArr: string[] = [];
+                        if (Array.isArray(attrVal)) {
+                          optionsArr = attrVal;
+                        } else if (typeof attrVal === 'string') {
+                          optionsArr = attrVal.split(',').map((s) => s.trim()).filter(Boolean);
+                        }
+
+                        if (optionsArr.length > 0) {
+                          const isColorKey = attrKey.toLowerCase().includes('color');
+                          const selectedVal = selectedVariants[attrKey] || optionsArr[0];
+
+                          return (
+                            <div key={attrKey} className="space-y-1.5">
+                              <label className="text-xs font-bold text-slate-700 block">
+                                {attrKey}: <span className="font-semibold text-indigo-600 ml-1">{selectedVal}</span>
+                              </label>
+                              <div className="flex flex-wrap gap-2">
+                                {optionsArr.map((opt) => {
+                                  const isChosen = selectedVal === opt;
+                                  const colorStyle = isColorKey ? getColorStyle(opt) : null;
+
+                                  if (colorStyle) {
+                                    const isWhite = opt.toLowerCase() === 'white';
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={opt}
+                                        title={opt}
+                                        onClick={() =>
+                                          setSelectedVariants((prev) => ({
+                                            ...prev,
+                                            [attrKey]: opt,
+                                          }))
+                                        }
+                                        className={`relative w-8 h-8 rounded-full transition-all flex items-center justify-center border shadow-sm ${
+                                          colorStyle.border
+                                        } ${
+                                          isChosen
+                                            ? 'ring-2 ring-indigo-600 ring-offset-2 scale-110'
+                                            : 'hover:scale-105 opacity-85 hover:opacity-100'
+                                        }`}
+                                        style={{ background: colorStyle.background }}
+                                      >
+                                        {isChosen && (
+                                          <Check
+                                            className={`w-4 h-4 stroke-[3] ${
+                                              isWhite ? 'text-slate-900' : 'text-white'
+                                            }`}
+                                          />
+                                        )}
+                                      </button>
+                                    );
+                                  }
+
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={opt}
+                                      onClick={() =>
+                                        setSelectedVariants((prev) => ({
+                                          ...prev,
+                                          [attrKey]: opt,
+                                        }))
+                                      }
+                                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                                        isChosen
+                                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-600/30 scale-105'
+                                          : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                                      }`}
+                                    >
+                                      {opt}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div key={attrKey} className="flex items-center justify-between text-xs py-1 border-b border-slate-200/60 last:border-none">
+                            <span className="font-bold text-slate-600">{attrKey}:</span>
+                            <span className="font-extrabold text-slate-900">{String(attrVal)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Sub-Order Split Callout */}
-                <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 mb-4">
+                <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
                   <div className="flex items-center gap-2 text-xs font-bold text-purple-700">
                     <Truck className="w-4 h-4 text-purple-600" />
                     <span>Independent Sub-Order Fulfillment</span>
@@ -206,7 +338,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                   </p>
                 </div>
 
-                {/* Attributes */}
+                {/* Guarantees */}
                 <div className="space-y-2 text-xs text-slate-500 border-t border-slate-100 pt-3 font-medium">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -230,7 +362,13 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                   variant="primary"
                   size="md"
                   onClick={() => {
-                    onAddToCart(product);
+                    onAddToCart({
+                      ...product,
+                      attributes: {
+                        ...(product.attributes as object),
+                        ...selectedVariants,
+                      },
+                    });
                     onClose();
                   }}
                   leftIcon={<ShoppingCart className="w-4 h-4" />}

@@ -1,2 +1,6 @@
 node_modules
+# ENVs
 .env
+.env.local
+.env.example
+dist

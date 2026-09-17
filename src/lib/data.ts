@@ -19,6 +19,8 @@ export interface Product {
   price: number;
   stock: number;
   image: string;
+  images?: string[];
+  attributes?: Record<string, any>;
   rating: number;
   reviewsCount: number;
   vendorId: string;
@@ -54,9 +56,16 @@ export interface Order {
   orderNumber: string;
   customerName: string;
   customerEmail: string;
+  customerPhone?: string;
   shippingAddress: string;
   paymentMethod: string;
   paymentStatus: 'PAID' | 'PENDING' | 'FAILED';
+  transactionId?: string;
+  paymentDetails?: {
+    method: string;
+    maskedDetails: string;
+    provider?: string;
+  };
   totalAmount: number;
   aggregateStatus: 'PROCESSING' | 'SHIPPED' | 'DELIVERED';
   subOrders: SubOrder[];

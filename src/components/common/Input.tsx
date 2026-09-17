@@ -9,11 +9,27 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   helperText?: string;
 }
 
+const renderLabelWithRedAsterisk = (labelText: string) => {
+  if (!labelText.includes('*')) return labelText;
+  const parts = labelText.split('*');
+  return (
+    <>
+      {parts[0]}
+      <span className="text-rose-500 font-extrabold ml-0.5">*</span>
+      {parts.slice(1).join('*')}
+    </>
+  );
+};
+
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ label, icon, error, helperText, className = '', disabled, ...props }, ref) => {
     return (
       <div className="space-y-1.5 w-full">
-        {label && <label className="text-xs font-bold text-slate-700 block">{label}</label>}
+        {label && (
+          <label className="text-xs font-bold text-slate-700 block">
+            {renderLabelWithRedAsterisk(label)}
+          </label>
+        )}
 
         <div className="relative">
           {icon && (

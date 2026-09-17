@@ -40,7 +40,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
   const vendorCount = Object.keys(groupedByVendor).length;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] overflow-hidden bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
         <div className="w-screen max-w-md bg-white text-slate-900 flex flex-col border-l border-slate-200 shadow-2xl animate-in slide-in-from-right duration-300">
           {/* Drawer Header */}

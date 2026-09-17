@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface FlyoutProps {
@@ -30,6 +31,12 @@ export const Flyout: React.FC<FlyoutProps> = ({
   children,
   footer,
 }) => {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Prevent body scrolling when flyout is open
   useEffect(() => {
     if (isOpen) {
@@ -53,13 +60,13 @@ export const Flyout: React.FC<FlyoutProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] overflow-hidden bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="absolute inset-y-0 right-0 max-w-full flex pl-10 h-full">
         <div
-          className={`w-screen ${maxWidthClasses[maxWidth]} bg-white text-slate-900 flex flex-col border-l border-slate-200 shadow-2xl animate-in slide-in-from-right duration-300 relative`}
+          className={`w-screen ${maxWidthClasses[maxWidth]} h-full bg-white text-slate-900 flex flex-col border-l border-slate-200 shadow-2xl animate-in slide-in-from-right duration-300 relative`}
         >
           {/* Flyout Header */}
           <div className="px-6 py-5 sm:px-8 border-b border-slate-200/80 flex items-center justify-between bg-white shrink-0 shadow-xs z-10">
@@ -91,6 +98,7 @@ export const Flyout: React.FC<FlyoutProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

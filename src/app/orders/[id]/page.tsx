@@ -197,7 +197,7 @@ export default function OrderDetailsPage() {
           </div>
 
           {/* Customer & Address Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
               <span className="text-slate-500 block mb-1 font-semibold">Customer Name</span>
               <span className="font-bold text-slate-900">{order.customerName}</span>
@@ -205,6 +205,15 @@ export default function OrderDetailsPage() {
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
               <span className="text-slate-500 block mb-1 font-semibold">Email Address</span>
               <span className="font-bold text-slate-900">{order.customerEmail}</span>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <span className="text-slate-500 block mb-1 font-semibold">Payment Gateway Ref</span>
+              <span className="font-mono font-bold text-indigo-700 block truncate">
+                {order.transactionId || 'pay_sim_948210'}
+              </span>
+              <span className="text-[10px] text-slate-500 font-medium">
+                {order.paymentDetails?.maskedDetails || 'Credit Card •••• 4242'}
+              </span>
             </div>
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
               <span className="text-slate-500 block mb-1 font-semibold">Shipping Address</span>

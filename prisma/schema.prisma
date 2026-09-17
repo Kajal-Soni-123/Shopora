@@ -72,6 +72,7 @@ model Product {
   price        Float
   stock        Int
   image        String
+  images       String[]    @default([])
   rating       Float       @default(4.7)
   reviewsCount Int         @default(120)
   attributes   Json?       // Key-value pairs for category custom fields

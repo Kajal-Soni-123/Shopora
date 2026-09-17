@@ -178,3 +178,8 @@ import { Flyout } from '@/components/common/Flyout';
 5. **No Raw Inputs**: Replace `<input type="text">` or `<input type="number">` with `<Input />`.
 6. **No Raw Checkboxes**: Replace `<input type="checkbox">` with `<Checkbox />`.
 7. **No Native Alert/Confirm**: Always use `<ConfirmModal />` for delete/destructive prompt actions.
+8. **Form Validation & Red Asterisks**:
+   - Always set `noValidate` on `<form noValidate ...>` to prevent default HTML browser popups ("Please fill in this field").
+   - Display mandatory field indicator asterisks (`*`) in **red** (`text-rose-500 font-extrabold`).
+   - Display validation errors in **xs red text** directly below or beside the target field (`<p className="text-[11px] font-semibold text-rose-500 mt-1">{error}</p>`).
+

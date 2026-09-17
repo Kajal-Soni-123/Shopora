@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { title, description, price, stock, image, categoryId, attributes } = body;
+    const { title, description, price, stock, image, images, categoryId, attributes } = body;
 
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
       return ApiResponse.badRequest('Product title is required.');
@@ -75,6 +75,7 @@ export async function POST(request: Request) {
         price,
         stock,
         image,
+        images: Array.isArray(images) ? images : [],
         attributes: attributes || {},
         vendorId: sessionUser.vendorId,
         categoryId: finalCategoryId,

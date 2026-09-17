@@ -1,13 +1,37 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CreditCard, ShieldCheck, Truck, Warehouse, CheckCircle2, ArrowRight } from 'lucide-react';
+import {
+  CreditCard,
+  ShieldCheck,
+  Truck,
+  Warehouse,
+  CheckCircle2,
+  ArrowRight,
+  QrCode,
+  Building2,
+  Wallet,
+  Lock,
+  Smartphone,
+  RefreshCw,
+  AlertCircle,
+  Check,
+} from 'lucide-react';
 import { CartItem, Order, INITIAL_VENDORS } from '@/lib/data';
 import { formatCurrency, groupItemsByVendor, calculateOrderTotals } from '@/lib/utils';
 import { PAYMENT_METHODS } from '@/lib/constants';
 import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
+import {
+  detectCardBrand,
+  formatCardNumber,
+  formatExpiryDate,
+  validateCardNumber,
+  validateExpiryDate,
+  validateUpiId,
+  CARD_BRANDS,
+} from '@/lib/paymentGateway';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -24,22 +48,120 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
 }) => {
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpInput, setOtpInput] = useState('123456');
+  const [otpError, setOtpError] = useState('');
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [pendingIntentId, setPendingIntentId] = useState('');
+  const [toastError, setToastError] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastError(msg);
+    setTimeout(() => {
+      setToastError((current) => (current === msg ? null : current));
+    }, 4000);
+  };
+
+  // Shipping & Contact State
   const [formData, setFormData] = useState({
     name: 'Alex Morgan',
     email: 'alex.morgan@example.com',
+    phone: '+1 555-019-2834',
     address: '742 Evergreen Terrace, Seattle, WA 98101',
     paymentMethod: 'CREDIT_CARD',
   });
 
-  const { subtotal } = calculateOrderTotals(items);
+  // Card Payment Details State
+  const [cardDetails, setCardDetails] = useState({
+    number: '4532 0123 4567 8901',
+    expiry: '12/28',
+    cvv: '888',
+    holder: 'Alex Morgan',
+  });
 
-  // Group items by vendor using utility function
+  // UPI State
+  const [upiDetails, setUpiDetails] = useState({
+    upiId: 'alex.morgan@okaxis',
+    showQr: false,
+  });
+
+  // Net Banking / Wallet selection state
+  const [selectedBank, setSelectedBank] = useState('HDFC');
+  const [selectedWallet, setSelectedWallet] = useState('Apple Pay');
+
+  const { subtotal } = calculateOrderTotals(items);
+  const detectedBrand = detectCardBrand(cardDetails.number);
+  const brandInfo = CARD_BRANDS.find((b) => b.brand === detectedBrand);
+
+  // Group items by vendor
   const itemsByVendor = groupItemsByVendor(
     items,
     (item) => item.product.vendorId || 'vendor_urban_tech'
   );
-
   const vendorCount = Object.keys(itemsByVendor).length;
+
+  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCardNumber(e.target.value);
+    setCardDetails((prev) => ({ ...prev, number: formatted }));
+  };
+
+  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatExpiryDate(e.target.value);
+    setCardDetails((prev) => ({ ...prev, expiry: formatted }));
+  };
+
+  const processOrderCreation = async (transactionId?: string, maskedPaymentInfo?: string) => {
+    setIsSubmitting(true);
+    try {
+      let maskedDetails = maskedPaymentInfo;
+      if (!maskedDetails) {
+        if (formData.paymentMethod === 'CREDIT_CARD') {
+          const clean = cardDetails.number.replace(/\s+/g, '');
+          const last4 = clean.slice(-4) || '4242';
+          maskedDetails = `${brandInfo?.name || 'Card'} ending in •••• ${last4}`;
+        } else if (formData.paymentMethod === 'UPI') {
+          maskedDetails = `UPI ID: ${upiDetails.upiId}`;
+        } else if (formData.paymentMethod === 'NET_BANKING') {
+          maskedDetails = `Netbanking: ${selectedBank} Bank`;
+        } else {
+          maskedDetails = `Wallet: ${selectedWallet}`;
+        }
+      }
+
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items,
+          customerName: formData.name,
+          customerEmail: formData.email,
+          customerPhone: formData.phone,
+          shippingAddress: formData.address,
+          paymentMethod: formData.paymentMethod,
+          transactionId: transactionId || `pay_${Math.random().toString(36).substring(2, 11)}`,
+          paymentDetails: {
+            method: formData.paymentMethod,
+            maskedDetails,
+            provider: 'Shopora Pay Gateway',
+          },
+        }),
+      });
+
+      const result = await res.json();
+      const order = result.data?.order || result.order;
+      if (result.success && order) {
+        setShowOtpModal(false);
+        onOrderSuccess(order);
+      } else {
+        showToast(result.error || 'Failed to place order');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error finalizing order payment');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,239 +170,618 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
       return;
     }
 
+    // Client-side validations for step 2
+    if (formData.paymentMethod === 'CREDIT_CARD') {
+      if (!validateCardNumber(cardDetails.number)) {
+        showToast('Please enter a valid 16-digit credit card number.');
+        return;
+      }
+      if (!validateExpiryDate(cardDetails.expiry)) {
+        showToast('Please enter a valid future expiration date (MM/YY).');
+        return;
+      }
+      if (cardDetails.cvv.length < 3) {
+        showToast('Please enter a valid CVV.');
+        return;
+      }
+    } else if (formData.paymentMethod === 'UPI' && !upiDetails.showQr) {
+      if (!validateUpiId(upiDetails.upiId)) {
+        showToast('Please enter a valid UPI ID (e.g., username@bank).');
+        return;
+      }
+    }
+
+    // Create payment intent
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/orders', {
+      const intentRes = await fetch('/api/payments/create-intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items,
-          customerName: formData.name,
-          customerEmail: formData.email,
-          shippingAddress: formData.address,
+          amount: subtotal,
           paymentMethod: formData.paymentMethod,
+          cardDetails,
+          upiDetails,
+        }),
+      });
+      const intentData = await intentRes.json();
+      const intent = intentData.data || intentData;
+
+      if (!intentRes.ok) {
+        showToast(intentData.error || 'Failed to create payment intent');
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (intent.requires3DS) {
+        setPendingIntentId(intent.intentId);
+        setShowOtpModal(true);
+        setIsSubmitting(false);
+      } else {
+        await processOrderCreation();
+      }
+    } catch (err) {
+      console.error('Payment intent error:', err);
+      setIsSubmitting(false);
+      showToast('Payment processing error');
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setIsVerifyingOtp(true);
+    setOtpError('');
+    try {
+      const verifyRes = await fetch('/api/payments/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          intentId: pendingIntentId,
+          otp: otpInput,
         }),
       });
 
-      const result = await res.json();
-      const order = result.data?.order || result.order;
-      if (result.success && order) {
-        onOrderSuccess(order);
+      const verifyData = await verifyRes.json();
+      if (verifyRes.ok && verifyData.success) {
+        const paymentId = verifyData.data?.paymentId || `pay_${Math.random().toString(36).substring(2, 10)}`;
+        await processOrderCreation(paymentId);
       } else {
-        alert(result.error || 'Failed to place order');
+        setOtpError(verifyData.error || 'Invalid OTP. Please enter 123456.');
       }
     } catch (err) {
-      console.error(err);
-      alert('Error placing order');
+      setOtpError('Error verifying security code.');
     } finally {
-      setIsSubmitting(false);
+      setIsVerifyingOtp(false);
     }
   };
 
   return (
-    <Flyout
-      isOpen={isOpen}
-      onClose={onClose}
-      maxWidth="2xl"
-      title={
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center text-sm font-extrabold shrink-0">
-            {step}
+    <>
+      <Flyout
+        isOpen={isOpen}
+        onClose={onClose}
+        maxWidth="2xl"
+        title={
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center text-sm font-extrabold shrink-0">
+              {step}
+            </div>
+            <div>
+              <span className="text-base font-extrabold text-slate-900 block leading-tight">
+                {step === 1 ? 'Shipping & Order Breakdown' : 'Shopora Gateway Payment'}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">
+                Step {step} of 2 • 256-Bit Encrypted Secure Checkout
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-base font-extrabold text-slate-900 block leading-tight">
-              {step === 1 ? 'Shipping & Sub-Order Breakdown' : 'Payment & Final Confirmation'}
-            </span>
-            <span className="text-xs text-slate-500 font-medium">
-              Step {step} of 2 • Multi-Vendor Order Partitioning
-            </span>
-          </div>
-        </div>
-      }
-      footer={
-        <div className="flex items-center justify-between w-full">
-          {step === 2 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={() => setStep(1)}
-            >
-              Back to Details
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-          )}
+        }
+        footer={
+          <div className="flex items-center justify-between w-full">
+            {step === 2 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={() => setStep(1)}
+              >
+                Back to Details
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={onClose}
+              >
+                Cancel
+              </Button>
+            )}
 
-          <Button
-            type="submit"
-            form="checkout-form"
-            variant="primary"
-            size="md"
-            isLoading={isSubmitting}
-            rightIcon={
-              step === 1 ? (
-                <ArrowRight className="w-4 h-4" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )
-            }
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25"
-          >
-            {step === 1
-              ? 'Continue to Payment'
-              : `Place Order (${formatCurrency(subtotal)})`}
-          </Button>
-        </div>
-      }
-    >
-      <form id="checkout-form" onSubmit={handleSubmit} className="space-y-6">
-        {step === 1 ? (
-          <div className="space-y-5">
-            {/* Form Inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Button
+              type="submit"
+              form="checkout-form"
+              variant="primary"
+              size="md"
+              isLoading={isSubmitting}
+              rightIcon={
+                step === 1 ? (
+                  <ArrowRight className="w-4 h-4" />
+                ) : (
+                  <Lock className="w-4 h-4" />
+                )
+              }
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25"
+            >
+              {step === 1
+                ? 'Continue to Payment'
+                : `Authorize & Pay (${formatCurrency(subtotal)})`}
+            </Button>
+          </div>
+        }
+      >
+        <form id="checkout-form" onSubmit={handleSubmit} className="space-y-6">
+          {/* Animated Error Toast Banner */}
+          {toastError && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{toastError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToastError(null)}
+                className="text-rose-400 hover:text-rose-700 text-sm font-black px-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          {step === 1 ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Phone Number (SMS / WhatsApp Tracking Alerts)</span>
+                  <span className="text-[10px] text-indigo-600 font-extrabold uppercase">Twilio Enabled</span>
+                </label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="+1 555-019-2834"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Full Name
+                  Shipping Address
                 </label>
                 <input
                   type="text"
                   required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
-                />
+              {/* Sub-Orders Breakdown Preview */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-purple-600" />
+                    Sub-Orders Partitioning Preview
+                  </h4>
+                  <Badge variant="secondary" size="sm">
+                    {vendorCount} Packages
+                  </Badge>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                  {Object.entries(itemsByVendor).map(([vendorId, vendorItems], idx) => {
+                    const vendor = INITIAL_VENDORS.find((v) => v.id === vendorId);
+                    const vendorSubtotal = vendorItems.reduce(
+                      (s, i) => s + i.product.price * i.quantity,
+                      0
+                    );
+                    return (
+                      <div
+                        key={vendorId}
+                        className="p-3 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-between text-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center font-bold">
+                              {idx + 1}
+                            </span>
+                            Sub-Order: {vendor?.name || 'Vendor Partner'}
+                          </div>
+                          <p className="text-[11px] text-purple-700 font-medium flex items-center gap-1">
+                            <Warehouse className="w-3 h-3 text-purple-600" />
+                            {vendor?.warehouseLocation} • {vendorItems.length} item(s)
+                          </p>
+                        </div>
+                        <span className="font-extrabold text-indigo-600">{formatCurrency(vendorSubtotal)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
+          ) : (
+            <div className="space-y-5">
+              {/* Payment Method Selector Tabs */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Select Payment Method
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {PAYMENT_METHODS.map((method) => {
+                    const isSelected = formData.paymentMethod === method.id;
+                    return (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, paymentMethod: method.id })}
+                        className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-1.5 transition-all ${
+                          isSelected
+                            ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm ring-2 ring-indigo-500/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="text-xl">{method.icon}</span>
+                        <span className="text-center text-[11px]">{method.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Shipping Address
+              {/* Dynamic Payment Details Interface */}
+              {formData.paymentMethod === 'CREDIT_CARD' && (
+                <div className="space-y-4 p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-indigo-950 text-white shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+
+                  <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-5 bg-amber-400/90 rounded-sm flex items-center justify-center font-bold text-[9px] text-slate-900">
+                        CHIP
+                      </div>
+                      <span className="text-xs font-bold text-slate-300">Stripe Enabled Card</span>
+                    </div>
+                    <span className="text-sm font-black text-amber-300 uppercase tracking-wider flex items-center gap-1">
+                      {brandInfo ? brandInfo.name : 'Card'}
+                    </span>
+                  </div>
+
+                  {/* Stripe Test Card Quick Fill Pill */}
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-indigo-500/20 border border-indigo-400/30 text-[11px] text-indigo-200">
+                    <span>Stripe Test Card: <strong className="text-white font-mono">4242 4242 4242 4242</strong></span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCardDetails((prev) => ({
+                          ...prev,
+                          number: '4242 4242 4242 4242',
+                          expiry: '12/28',
+                          cvv: '888',
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-500 transition-colors"
+                    >
+                      Use Test Card
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
+                      Card Number
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        maxLength={19}
+                        value={cardDetails.number}
+                        onChange={handleCardNumberChange}
+                        placeholder="4532 0123 4567 8901"
+                        className="w-full bg-white/10 text-white placeholder-white/30 text-sm font-mono tracking-widest px-3.5 py-2.5 rounded-xl border border-white/20 focus:outline-none focus:border-amber-400 font-bold"
+                      />
+                      {validateCardNumber(cardDetails.number) && (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 absolute right-3 top-3" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
+                        Expiry Date
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={5}
+                        value={cardDetails.expiry}
+                        onChange={handleExpiryChange}
+                        placeholder="MM/YY"
+                        className="w-full bg-white/10 text-white placeholder-white/30 text-xs font-mono px-3 py-2 rounded-xl border border-white/20 focus:outline-none focus:border-amber-400 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
+                        CVV Code
+                      </label>
+                      <input
+                        type="password"
+                        maxLength={4}
+                        value={cardDetails.cvv}
+                        onChange={(e) => setCardDetails({ ...cardDetails, cvv: e.target.value })}
+                        placeholder="•••"
+                        className="w-full bg-white/10 text-white placeholder-white/30 text-xs font-mono px-3 py-2 rounded-xl border border-white/20 focus:outline-none focus:border-amber-400 font-bold"
+                      />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-[10px] font-bold text-indigo-200 uppercase tracking-wider mb-1">
+                        Holder Name
+                      </label>
+                      <input
+                        type="text"
+                        value={cardDetails.holder}
+                        onChange={(e) => setCardDetails({ ...cardDetails, holder: e.target.value })}
+                        className="w-full bg-white/10 text-white placeholder-white/30 text-xs px-3 py-2 rounded-xl border border-white/20 focus:outline-none focus:border-amber-400 font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {formData.paymentMethod === 'UPI' && (
+                <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      <Smartphone className="w-4 h-4 text-indigo-600" />
+                      Instant UPI Payment & QR Code
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setUpiDetails((p) => ({ ...p, showQr: !p.showQr }))}
+                      className="text-xs font-extrabold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      {upiDetails.showQr ? 'Enter VPA Handle' : 'Scan QR Code Instead'}
+                    </button>
+                  </div>
+
+                  {upiDetails.showQr ? (
+                    <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-indigo-100 shadow-sm space-y-2">
+                      <div className="w-36 h-36 bg-slate-900 rounded-xl p-2.5 flex items-center justify-center text-white relative">
+                        {/* Simulated QR Code SVG */}
+                        <svg viewBox="0 0 100 100" className="w-full h-full fill-white">
+                          <path d="M0,0 h30 v30 h-30 z M10,10 h10 v10 h-10 z M70,0 h30 v30 h-30 z M80,10 h10 v10 h-10 z M0,70 h30 v30 h-30 z M10,80 h10 v10 h-10 z M40,0 h20 v10 h-20 z M40,20 h10 v20 h-10 z M60,40 h20 v20 h-20 z M20,40 h10 v20 h-10 z M70,70 h20 v20 h-20 z" />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="bg-indigo-600 text-[10px] font-black px-1.5 py-0.5 rounded text-white shadow">
+                            SHOPORA
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-600">Scan with GPay, PhonePe, Paytm, or BHIM</span>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Enter UPI Virtual Private Address (VPA)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={upiDetails.upiId}
+                          onChange={(e) => setUpiDetails({ ...upiDetails, upiId: e.target.value })}
+                          placeholder="e.g. alex.morgan@okaxis"
+                          className="w-full bg-white text-sm px-3.5 py-2.5 rounded-xl border border-indigo-200 focus:outline-none focus:border-indigo-600 font-medium"
+                        />
+                        {validateUpiId(upiDetails.upiId) && (
+                          <Badge variant="success" size="sm" className="absolute right-2.5 top-2">
+                            Verified VPA
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {formData.paymentMethod === 'NET_BANKING' && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-indigo-600" />
+                    Select Popular Net Banking Partner
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {['HDFC', 'ICICI', 'SBI', 'AXIS', 'KOTAK', 'YES'].map((bank) => (
+                      <button
+                        key={bank}
+                        type="button"
+                        onClick={() => setSelectedBank(bank)}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
+                          selectedBank === bank
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <span>{bank} Bank</span>
+                        {selectedBank === bank && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {formData.paymentMethod === 'WALLET' && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Wallet className="w-4 h-4 text-indigo-600" />
+                    Choose Express Digital Wallet
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Apple Pay', 'Google Pay', 'Paytm Wallet', 'PhonePe Wallet'].map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setSelectedWallet(w)}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
+                          selectedWallet === w
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <span>{w}</span>
+                        {selectedWallet === w && <Check className="w-3.5 h-3.5" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Summary Box */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>Items Total ({items.length})</span>
+                  <span className="text-slate-900 font-bold">{formatCurrency(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>Shipping & Split Handling</span>
+                  <Badge variant="success" size="sm">FREE</Badge>
+                </div>
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>Generated Sub-Orders</span>
+                  <span className="text-purple-700 font-bold">{vendorCount} Child Orders</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-slate-200 text-sm font-extrabold text-slate-900">
+                  <span>Total Payable</span>
+                  <span className="text-indigo-600">{formatCurrency(subtotal)}</span>
+                </div>
+              </div>
+
+              {/* Security Banner */}
+              <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>256-Bit SSL Encrypted & PCI-DSS Compliant</span>
+                </div>
+                <span className="font-extrabold text-indigo-700">Shopora Pay</span>
+              </div>
+            </div>
+          )}
+        </form>
+      </Flyout>
+
+      {/* 3D Secure / OTP Verification Authorization Modal */}
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-5 relative animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-600">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900">
+                Shopora 3D Secure Authorization
+              </h3>
+              <p className="text-xs text-slate-500">
+                Enter your 6-digit banking security code to authorize{' '}
+                <strong className="text-slate-900">{formatCurrency(subtotal)}</strong>
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2 font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>
+                Simulated Gateway Test Code: <strong className="font-bold underline">123456</strong>
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700 text-center uppercase tracking-wider">
+                Enter 6-Digit Security Code (OTP)
               </label>
               <input
                 type="text"
-                required
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
+                maxLength={6}
+                value={otpInput}
+                onChange={(e) => setOtpInput(e.target.value)}
+                className="w-full text-center text-2xl font-mono tracking-[0.5em] font-black py-3 px-4 rounded-xl border-2 border-indigo-200 focus:border-indigo-600 focus:outline-none bg-slate-50"
               />
+              {otpError && (
+                <p className="text-xs font-bold text-red-600 text-center">{otpError}</p>
+              )}
             </div>
 
-            {/* Sub-Orders Breakdown Preview */}
-            <div className="space-y-3 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Truck className="w-4 h-4 text-purple-600" />
-                  Sub-Orders Partitioning Preview
-                </h4>
-                <Badge variant="secondary" size="sm">
-                  {vendorCount} Packages
-                </Badge>
-              </div>
+            <div className="flex items-center justify-between text-xs text-slate-500 font-medium pt-1">
+              <span>Resend code in 0:28</span>
+              <button
+                type="button"
+                onClick={() => setOtpInput('123456')}
+                className="text-indigo-600 font-bold hover:underline flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" /> Resend Code
+              </button>
+            </div>
 
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                {Object.entries(itemsByVendor).map(([vendorId, vendorItems], idx) => {
-                  const vendor = INITIAL_VENDORS.find((v) => v.id === vendorId);
-                  const vendorSubtotal = vendorItems.reduce(
-                    (s, i) => s + i.product.price * i.quantity,
-                    0
-                  );
-                  return (
-                    <div
-                      key={vendorId}
-                      className="p-3 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-between text-xs"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center font-bold">
-                            {idx + 1}
-                          </span>
-                          Sub-Order: {vendor?.name || 'Vendor Partner'}
-                        </div>
-                        <p className="text-[11px] text-purple-700 font-medium flex items-center gap-1">
-                          <Warehouse className="w-3 h-3 text-purple-600" />
-                          {vendor?.warehouseLocation} • {vendorItems.length} item(s)
-                        </p>
-                      </div>
-                      <span className="font-extrabold text-indigo-600">{formatCurrency(vendorSubtotal)}</span>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="flex gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                className="w-full"
+                onClick={() => setShowOtpModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                isLoading={isVerifyingOtp}
+                onClick={handleVerifyOtp}
+              >
+                Verify & Pay
+              </Button>
             </div>
           </div>
-        ) : (
-          <div className="space-y-5">
-            {/* Payment Method Selector */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Select Payment Method
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {PAYMENT_METHODS.map((method) => {
-                  const isSelected = formData.paymentMethod === method.id;
-                  return (
-                    <button
-                      key={method.id}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, paymentMethod: method.id })}
-                      className={`p-3 rounded-xl border text-xs font-bold flex flex-col items-center gap-2 transition-all ${
-                        isSelected
-                          ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-xl">{method.icon}</span>
-                      <span className="text-center">{method.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Order Summary Box */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600 font-medium">
-                <span>Items Total ({items.length})</span>
-                <span className="text-slate-900 font-bold">{formatCurrency(subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-slate-600 font-medium">
-                <span>Shipping & Split Handling</span>
-                <Badge variant="success" size="sm">FREE</Badge>
-              </div>
-              <div className="flex justify-between text-slate-600 font-medium">
-                <span>Generated Sub-Orders</span>
-                <span className="text-purple-700 font-bold">{vendorCount} Child Orders</span>
-              </div>
-              <div className="flex justify-between pt-2 border-t border-slate-200 text-sm font-extrabold text-slate-900">
-                <span>Total Payable</span>
-                <span className="text-indigo-600">{formatCurrency(subtotal)}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </form>
-    </Flyout>
+        </div>
+      )}
+    </>
   );
 });
 
