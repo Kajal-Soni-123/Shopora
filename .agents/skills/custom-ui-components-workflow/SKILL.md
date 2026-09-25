@@ -32,6 +32,7 @@ src/components/common/
 ├── Radio.tsx         # Custom radio button with indigo focus indicator
 ├── Button.tsx        # Custom button component (primary, secondary, danger, outline)
 ├── Modal.tsx         # Custom backdrop modal wrapper with smooth transition animations
+├── PhoneInput.tsx    # Custom phone number input with country flag selector & dial code auto-prefix
 └── ConfirmModal.tsx  # Standardized confirmation prompt dialog
 ```
 
@@ -145,7 +146,28 @@ import { Radio } from '@/components/common/Radio';
 
 ---
 
-## 🛠️ 6. `<Flyout />` Component (Slide-Over Panel for Forms)
+## 🛠️ 6. `<PhoneInput />` Component
+
+Custom styled phone number input with country flag dropdown selector (e.g. 🇮🇳, 🇺🇸, 🇬🇧), dropdown chevron, vertical divider line, searchable country popover menu, and automatic country dial code prefixing.
+
+### Usage:
+```tsx
+import { PhoneInput } from '@/components/common/PhoneInput';
+
+<PhoneInput
+  label="Phone Number (SMS / WhatsApp Tracking Alerts) *"
+  value={phone}
+  onChange={(val: string) => setPhone(val)}
+  error={phoneError}
+  helperText="Order tracking SMS and WhatsApp notifications will be sent to this number."
+  disabled={isSubmitting}
+  required
+/>
+```
+
+---
+
+## 🛠️ 7. `<Flyout />` Component (Slide-Over Panel for Forms)
 
 Slide-over full-height side panel component (`@/components/common/Flyout`) for all multi-field and complex form workflows.
 
@@ -183,9 +205,10 @@ import { Flyout } from '@/components/common/Flyout';
 3. **Modal Exception**: Center `<Modal />` is strictly reserved for `<ConfirmModal />` and `<ProductQuickViewModal />`.
 4. **No Raw Selects**: Replace any `<select>` with `<Select options={...} value={...} onChange={...} />`.
 5. **No Raw Inputs**: Replace `<input type="text">` or `<input type="number">` with `<Input />`.
-6. **No Raw Checkboxes**: Replace `<input type="checkbox">` with `<Checkbox />`.
-7. **No Native Alert/Confirm**: Always use `<ConfirmModal />` for delete/destructive prompt actions.
-8. **Form Validation & Red Asterisks**:
+6. **No Raw Tel / Phone Inputs**: Replace any `<input type="tel">` with `<PhoneInput value={...} onChange={...} />`.
+7. **No Raw Checkboxes**: Replace `<input type="checkbox">` with `<Checkbox />`.
+8. **No Native Alert/Confirm**: Always use `<ConfirmModal />` for delete/destructive prompt actions.
+9. **Form Validation & Red Asterisks**:
    - Always set `noValidate` on `<form noValidate ...>` to prevent default HTML browser popups ("Please fill in this field").
    - Display mandatory field indicator asterisks (`*`) in **red** (`text-rose-500 font-extrabold`).
    - Display validation errors in **xs red text** directly below or beside the target field (`<p className="text-[11px] font-semibold text-rose-500 mt-1">{error}</p>`).
