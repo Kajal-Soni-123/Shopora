@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest } from 'next/server';
 import { ApiResponse } from '@/lib/api-response';
 import { getDeliveryProvider } from '@/lib/shipping/ProviderFactory';
