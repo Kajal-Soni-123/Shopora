@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { ApiResponse } from '@/lib/api-response';
 import { getSessionUser } from '@/lib/auth';

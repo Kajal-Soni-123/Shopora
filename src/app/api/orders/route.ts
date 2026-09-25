@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import { CartItem as ClientCartItem, INITIAL_VENDORS, TrackingEvent } from '@/lib/data';
 import { ApiResponse } from '@/lib/api-response';

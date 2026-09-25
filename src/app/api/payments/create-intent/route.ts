@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import { ApiResponse } from '@/lib/api-response';
 import { createPaymentIntent, validateCardNumber, validateUpiId } from '@/lib/paymentGateway';
