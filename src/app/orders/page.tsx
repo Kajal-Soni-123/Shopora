@@ -21,6 +21,11 @@ import {
   Tag,
   Warehouse,
   Info,
+  Star,
+  X,
+  Loader2,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
 import Image from 'next/image';
 import { getColorStyle } from '@/lib/color-utils';
@@ -54,12 +59,80 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 
 import { OrderCardSkeleton } from '@/components/common/Skeleton';
 
+interface ReviewProductTarget {
+  id: string;
+  title: string;
+  image: string;
+}
+
 export default function OrdersListPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+
+  // Write Review Modal state
+  const [reviewTarget, setReviewTarget] = useState<ReviewProductTarget | null>(null);
+  const [userRating, setUserRating] = useState<number>(5);
+  const [hoverRating, setHoverRating] = useState<number>(0);
+  const [commentText, setCommentText] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [reviewError, setReviewError] = useState<string>('');
+  const [reviewSuccess, setReviewSuccess] = useState<string>('');
+
+  const handleOpenReviewModal = (product: { id: string; title: string; image: string }) => {
+    setReviewTarget(product);
+    setUserRating(5);
+    setHoverRating(0);
+    setCommentText('');
+    setReviewError('');
+    setReviewSuccess('');
+  };
+
+  const handleCloseReviewModal = () => {
+    setReviewTarget(null);
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewTarget) return;
+    if (!commentText.trim()) {
+      setReviewError('Please enter your review comment');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setReviewError('');
+    setReviewSuccess('');
+
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: reviewTarget.id,
+          rating: userRating,
+          comment: commentText.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setReviewError(data.error || 'Failed to submit review. Ensure you are signed in.');
+      } else {
+        setReviewSuccess('Thank you! Your verified product review has been submitted.');
+        setTimeout(() => {
+          setReviewTarget(null);
+        }, 1800);
+      }
+    } catch (err) {
+      console.error('Error submitting review:', err);
+      setReviewError('Network error submitting review.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     async function loadOrders() {
@@ -69,26 +142,15 @@ export default function OrdersListPage() {
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
           setOrders(data.data);
-          setIsLoading(false);
-          return;
+        } else {
+          setOrders([]);
         }
       } catch (err) {
         console.error('Error fetching orders from API:', err);
+        setOrders([]);
+      } finally {
+        setIsLoading(false);
       }
-
-      // Fallback to localStorage list ONLY if API call fails or returns non-success
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('shopora_orders');
-        if (stored) {
-          try {
-            const parsed: Order[] = JSON.parse(stored);
-            setOrders(parsed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-          } catch {
-            setOrders([]);
-          }
-        }
-      }
-      setIsLoading(false);
     }
 
     loadOrders();
@@ -102,11 +164,11 @@ export default function OrdersListPage() {
 
       {/* Sub Header */}
       <div className="bg-white border-b border-slate-200/80 shadow-xs py-3.5">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/profile"
-              className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Profile
@@ -114,17 +176,17 @@ export default function OrdersListPage() {
             <span className="text-slate-300">|</span>
             <div className="flex items-center gap-2">
               <PackageCheck className="w-4 h-4 text-indigo-600" />
-              <span className="font-extrabold text-xs text-slate-900">My Orders & Packages</span>
+              <span className="font-bold text-xs text-slate-900">My Orders</span>
             </div>
           </div>
 
-          <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
             {orders.length} Order{orders.length !== 1 ? 's' : ''} Total
           </span>
         </div>
       </div>
 
-      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-6">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-6">
         {/* Page Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -144,19 +206,19 @@ export default function OrdersListPage() {
           </div>
         ) : orders.length === 0 ? (
           /* Empty State */
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-12 flex flex-col items-center text-center space-y-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-12 flex flex-col items-center text-center space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
-              <ShoppingBag className="w-8 h-8 text-indigo-400" />
+              <ShoppingBag className="w-8 h-8 text-indigo-500" />
             </div>
             <div>
-              <h3 className="text-base font-extrabold text-slate-900">No orders placed yet</h3>
-              <p className="text-xs text-slate-500 font-medium mt-1">When you place your first order, all product details and tracking will appear here.</p>
+              <h3 className="text-base font-bold text-slate-900">No orders placed yet</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">When you place an order, package tracking details will appear here.</p>
             </div>
             <Link
               href="/"
-              className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-extrabold hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-600/20"
+              className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-xs"
             >
-              Start Shopping Catalog
+              Start Shopping
             </Link>
           </div>
         ) : null}
@@ -173,28 +235,30 @@ export default function OrdersListPage() {
               warehouseLocation: sub.vendor?.warehouseLocation,
               expectedDelivery: sub.expectedDelivery,
               subOrderNumber: sub.subOrderNumber,
+              subStatus: sub.status,
+              isDelivered: sub.status === 'DELIVERED' || order.aggregateStatus === 'DELIVERED',
             }))
           );
 
           return (
             <div
               key={order.id}
-              className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:border-indigo-200 transition-all overflow-hidden"
+              className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all overflow-hidden"
             >
               {/* Order Header Summary Banner */}
-              <div className="bg-slate-50/80 p-5 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="bg-slate-50/90 p-5 border-b border-slate-200/70 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Order ID</span>
-                    <h3 className="text-base font-extrabold text-indigo-700">#{order.orderNumber}</h3>
+                    <span className="text-xs font-semibold text-slate-500 block">Order ID</span>
+                    <h3 className="text-base font-bold text-slate-900">#{order.orderNumber}</h3>
                   </div>
 
                   <div className="h-8 w-px bg-slate-200 hidden sm:block" />
 
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Date Placed</span>
-                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1 mt-0.5">
-                      <CalendarDays className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="text-xs font-semibold text-slate-500 block">Placed on</span>
+                    <p className="text-xs font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
+                      <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
                       {new Date(order.createdAt).toLocaleDateString('en-IN', {
                         day: 'numeric',
                         month: 'short',
@@ -206,32 +270,34 @@ export default function OrdersListPage() {
                   <div className="h-8 w-px bg-slate-200 hidden sm:block" />
 
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Shipment Packages</span>
-                    <p className="text-xs font-bold text-slate-800 flex items-center gap-1 mt-0.5">
-                      <Package className="w-3.5 h-3.5 text-indigo-600" />
-                      {order.subOrders.length} Sub-Order{order.subOrders.length > 1 ? 's' : ''}
+                    <span className="text-xs font-semibold text-slate-500 block">Packages</span>
+                    <p className="text-xs font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
+                      <Package className="w-3.5 h-3.5 text-slate-500" />
+                      {order.subOrders.length} Package{order.subOrders.length > 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Total Amount</span>
-                    <span className="text-lg font-black text-slate-900">{formatCurrency(order.totalAmount)}</span>
+                <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 sm:gap-4 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
+                  <div className="text-left sm:text-right">
+                    <span className="text-xs text-slate-500 block font-medium">Total</span>
+                    <span className="text-lg font-bold text-slate-900">{formatCurrency(order.totalAmount)}</span>
                   </div>
 
-                  <span className={`px-3 py-1.5 rounded-full text-xs font-extrabold border flex items-center gap-1.5 ${status.color}`}>
-                    {status.icon}
-                    {status.label}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${status.color}`}>
+                      {status.icon}
+                      {status.label}
+                    </span>
 
-                  <Link
-                    href={`/orders/${order.id}`}
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-sm shadow-indigo-600/20 shrink-0"
-                  >
-                    <span>Track Order</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </Link>
+                    <Link
+                      href={`/orders/${order.id}`}
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all flex items-center gap-1 shrink-0 shadow-xs"
+                    >
+                      <span>Track Order</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
+                  </div>
                 </div>
               </div>
 
@@ -330,14 +396,34 @@ export default function OrdersListPage() {
                           </div>
                         </div>
 
-                        {/* Price & Quantity Summary */}
-                        <div className="flex md:flex-col items-end justify-between md:justify-center w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 text-right shrink-0">
-                          <span className="text-xs text-slate-400 font-medium block">
-                            {item.quantity} × {formatCurrency(item.price)}
-                          </span>
-                          <span className="text-base font-black text-slate-900">
-                            {formatCurrency(item.quantity * item.price)}
-                          </span>
+                        {/* Price & Quantity Summary + Write Review Button */}
+                        <div className="flex md:flex-col items-end justify-between md:justify-center w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 text-right shrink-0 gap-2">
+                          <div>
+                            <span className="text-xs text-slate-400 font-medium block">
+                              {item.quantity} × {formatCurrency(item.price)}
+                            </span>
+                            <span className="text-base font-black text-slate-900">
+                              {formatCurrency(item.quantity * item.price)}
+                            </span>
+                          </div>
+
+                          {product?.id && (
+                            item.isDelivered ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReviewModal({ id: product.id, title: product.title, image: product.image })}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                              >
+                                <Star className="w-3.5 h-3.5 fill-current" />
+                                <span>Write Review</span>
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-semibold border border-slate-200">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                <span>Review available upon delivery</span>
+                              </span>
+                            )
+                          )}
                         </div>
                       </div>
                     );
@@ -348,6 +434,110 @@ export default function OrdersListPage() {
           );
         })}
       </main>
+
+      {/* Interactive Write Product Review Modal Overlay */}
+      {reviewTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 relative">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0">
+                  <Image src={reviewTarget.image} alt={reviewTarget.title} fill className="object-cover" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">
+                    Verified Purchase Review
+                  </span>
+                  <h3 className="text-sm font-extrabold text-slate-900 line-clamp-1">{reviewTarget.title}</h3>
+                </div>
+              </div>
+
+              <button
+                onClick={handleCloseReviewModal}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reviewError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{reviewError}</span>
+              </div>
+            )}
+
+            {reviewSuccess ? (
+              <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+                <h4 className="text-base font-extrabold text-emerald-900">Review Submitted!</h4>
+                <p className="text-xs text-emerald-700 font-medium">{reviewSuccess}</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitReview} className="space-y-4">
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Rating</label>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setUserRating(star)}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        className="p-1 focus:outline-none transition-transform hover:scale-110 cursor-pointer"
+                      >
+                        <Star
+                          className={`w-7 h-7 ${
+                            star <= (hoverRating || userRating) ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    <span className="ml-2 text-xs font-black text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                      {hoverRating || userRating} / 5 Stars
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Your Review Comment</label>
+                  <textarea
+                    rows={4}
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    placeholder="Share your experience with product quality, material, fit, and delivery..."
+                    className="w-full p-3.5 rounded-2xl text-xs bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-medium text-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseReviewModal}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-md shadow-amber-500/25 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                    Submit Product Review
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

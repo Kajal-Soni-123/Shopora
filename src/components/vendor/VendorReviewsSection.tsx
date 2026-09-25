@@ -215,25 +215,21 @@ export function VendorReviewsSection() {
       </div>
 
       {/* 2. Spotlight Banner: BEST PRODUCT AS PER CUSTOMER (Per Month Breakdown) */}
-      <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-purple-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        {/* Subtle decorative circles */}
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-10 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
-
+      <div className="bg-white text-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs relative overflow-hidden">
         <div className="relative z-10 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
             <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-gradient-to-tr from-amber-400 to-amber-200 text-slate-950 rounded-2xl shadow-lg shadow-amber-400/20">
+              <div className="p-2.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-2xl shadow-2xs">
                 <Trophy className="w-6 h-6 stroke-[2.5]" />
               </div>
               <div>
-                <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
                   Best Product as per Customer
-                  <span className="text-xs font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
+                  <span className="text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 rounded-full">
                     Monthly Top Choice
                   </span>
                 </h2>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
                   Calculated based on customer review volume, average monthly star rating, and 5-star feedback ratio.
                 </p>
               </div>
@@ -241,15 +237,15 @@ export function VendorReviewsSection() {
 
             {/* Month Tabs Selector */}
             {stats?.bestProductsPerMonth && stats.bestProductsPerMonth.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 overflow-x-auto">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200 overflow-x-auto">
                 {stats.bestProductsPerMonth.map((m) => (
                   <button
                     key={m.monthKey}
                     onClick={() => setSelectedMonthTab(m.monthKey)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
                       selectedMonthTab === m.monthKey
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        ? 'bg-indigo-600 text-white font-bold shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
                     {m.monthName}
@@ -261,9 +257,9 @@ export function VendorReviewsSection() {
 
           {/* Current Month Best Product Spotlight Content */}
           {currentMonthBest?.bestProduct ? (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center bg-white/5 border border-white/10 p-6 rounded-2xl backdrop-blur-md">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center bg-slate-50/80 border border-slate-200/80 p-6 rounded-2xl">
               <div className="md:col-span-3 flex justify-center">
-                <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl bg-slate-800">
+                <div className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden border border-slate-200 shadow-xs bg-white">
                   <Image
                     src={currentMonthBest.bestProduct.image}
                     alt={currentMonthBest.bestProduct.title}
@@ -271,7 +267,7 @@ export function VendorReviewsSection() {
                     sizes="(max-width: 768px) 144px, 176px"
                     className="object-cover"
                   />
-                  <div className="absolute top-2 left-2 bg-amber-500 text-slate-950 font-black text-[10px] uppercase px-2 py-0.5 rounded-full shadow">
+                  <div className="absolute top-2 left-2 bg-amber-500 text-white font-bold text-[10px] uppercase px-2 py-0.5 rounded-full shadow-2xs">
                     #1 Rated
                   </div>
                 </div>
@@ -279,50 +275,50 @@ export function VendorReviewsSection() {
 
               <div className="md:col-span-9 space-y-4">
                 <div>
-                  <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider mb-1">
-                    <Sparkles className="w-4 h-4" />
+                  <div className="flex items-center gap-2 text-amber-600 text-xs font-bold uppercase tracking-wider mb-1">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
                     Customer Winner for {currentMonthBest.monthName}
                   </div>
-                  <h3 className="text-2xl font-black text-white">{currentMonthBest.bestProduct.title}</h3>
-                  <p className="text-sm font-semibold text-slate-300 mt-1">
+                  <h3 className="text-2xl font-bold text-slate-900">{currentMonthBest.bestProduct.title}</h3>
+                  <p className="text-sm font-semibold text-slate-600 mt-1">
                     Price: {formatCurrency(currentMonthBest.bestProduct.price)}
                   </p>
                 </div>
 
                 {/* Monthly Stats Badge Pills */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="bg-slate-900/70 border border-slate-800 p-3 rounded-xl">
-                    <span className="text-[11px] font-medium text-slate-400 block">Monthly Rating</span>
-                    <div className="flex items-center gap-1.5 text-lg font-black text-amber-400 mt-0.5">
+                  <div className="bg-white border border-slate-200/80 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-medium text-slate-500 block">Monthly Rating</span>
+                    <div className="flex items-center gap-1.5 text-lg font-bold text-amber-500 mt-0.5">
                       <Star className="w-4 h-4 fill-amber-400" />
                       {currentMonthBest.bestProduct.monthlyAvgRating} / 5.0
                     </div>
                   </div>
 
-                  <div className="bg-slate-900/70 border border-slate-800 p-3 rounded-xl">
-                    <span className="text-[11px] font-medium text-slate-400 block">Reviews in Month</span>
-                    <span className="text-lg font-black text-white mt-0.5 block">
+                  <div className="bg-white border border-slate-200/80 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-medium text-slate-500 block">Reviews in Month</span>
+                    <span className="text-lg font-bold text-slate-900 mt-0.5 block">
                       {currentMonthBest.bestProduct.monthlyReviewCount} comments
                     </span>
                   </div>
 
-                  <div className="bg-slate-900/70 border border-slate-800 p-3 rounded-xl col-span-2 sm:col-span-1">
-                    <span className="text-[11px] font-medium text-slate-400 block">5-Star Feedback</span>
-                    <span className="text-lg font-black text-emerald-400 mt-0.5 block">
+                  <div className="bg-white border border-slate-200/80 p-3 rounded-xl shadow-2xs col-span-2 sm:col-span-1">
+                    <span className="text-[11px] font-medium text-slate-500 block">5-Star Feedback</span>
+                    <span className="text-lg font-bold text-emerald-600 mt-0.5 block">
                       {currentMonthBest.bestProduct.fiveStarCount} verified 5★
                     </span>
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-400 font-medium italic">
-                  "Selected as the top product based on highest customer satisfaction score and positive review density during {currentMonthBest.monthName}."
+                <p className="text-xs text-slate-500 font-medium italic">
+                  &quot;Selected as the top product based on highest customer satisfaction score and positive review density during {currentMonthBest.monthName}.&quot;
                 </p>
               </div>
             </div>
           ) : (
-            <div className="p-8 text-center text-slate-400 bg-white/5 rounded-2xl border border-white/10">
-              <Package className="w-10 h-10 mx-auto text-slate-500 mb-2" />
-              <p className="text-sm font-semibold">No reviews recorded for this month yet.</p>
+            <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-slate-200">
+              <Package className="w-10 h-10 mx-auto text-slate-400 mb-2" />
+              <p className="text-sm font-semibold text-slate-700">No reviews recorded for this month yet.</p>
             </div>
           )}
         </div>

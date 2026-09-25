@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { sendCategoryRequestToAdmin } from '@/lib/emailService';
+import { createNotification } from '@/lib/notificationService';
 import { ApiResponse } from '@/lib/api-response';
 
 function slugifyText(text: string): string {
@@ -90,9 +91,39 @@ export async function POST(req: NextRequest) {
       console.error('Failed to send admin email notification:', emailErr);
     }
 
+    // Dispatch in-app notification to Vendor
+    await createNotification({
+      userId: authUser.userId,
+      email: vendor.email,
+      title: 'Category Request Submitted 📂',
+      message: `Your request for category "${trimmedName}" has been submitted for admin review.`,
+      type: 'CATEGORY_REQUEST',
+      link: '/vendor/dashboard',
+    });
+
+    // Dispatch in-app notification to Admin users
+    try {
+      const adminUsers = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true, email: true },
+      });
+      for (const admin of adminUsers) {
+        await createNotification({
+          userId: admin.id,
+          email: admin.email,
+          title: 'New Category Request 📂',
+          message: `Vendor ${vendor.name} requested new category "${trimmedName}".`,
+          type: 'CATEGORY_REQUEST',
+          link: '/admin/dashboard?tab=category-requests',
+        });
+      }
+    } catch (adminNotifErr) {
+      console.error('Error notifying admins of category request:', adminNotifErr);
+    }
+
     return ApiResponse.created(
       categoryRequest,
-      'Category request submitted successfully. Super Admin has been notified via email.'
+      'Category request submitted successfully. Super Admin has been notified via email and in-app notification.'
     );
   } catch (error: any) {
     console.error('POST /api/vendor/category-requests error:', error);

@@ -15,10 +15,15 @@ import {
   Store,
   ShieldCheck,
   Sparkles,
+  Users,
+  Heart,
 } from 'lucide-react';
 import { ShoporaLogo } from '@/components/common/ShoporaLogo';
 import { CartItem } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
+import { useGroupShopping } from '@/context/GroupShoppingContext';
+import { useWishlist } from '@/context/WishlistContext';
+import NotificationDrawer from '@/components/NotificationDrawer';
 
 function UserNavControls() {
   const { user, openAuthModal, logout } = useAuth();
@@ -115,7 +120,7 @@ function UserNavControls() {
               My Account Profile
             </Link>
             <Link
-              href="/orders/latest"
+              href="/orders"
               onClick={() => setDropdownOpen(false)}
               className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-700 hover:text-indigo-600 hover:bg-slate-50 font-medium transition-colors"
             >
@@ -172,6 +177,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   isCartOpen = false,
 }) => {
   const { user } = useAuth();
+  const { activeSession, setIsGroupModalOpen } = useGroupShopping();
+  const { wishlistCount, setIsWishlistOpen } = useWishlist();
   const pathname = usePathname();
   const router = useRouter();
   const isHomePage = pathname === '/';
@@ -229,17 +236,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const rootCategories = dbCategories.filter((c) => !c.parentId);
 
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm shadow-slate-200/40">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
+    <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 gap-2 sm:gap-4">
           
           {/* Left: Hamburger Side Navigation Toggle & Logo */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={onOpenSidebar}
-              className="p-2.5 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/80 transition-all shadow-sm flex items-center justify-center shrink-0"
-              title="Open Side Navigation Bar"
+              className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors flex items-center justify-center shrink-0"
+              title="Open Navigation Menu"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -249,38 +258,44 @@ export const Navbar: React.FC<NavbarProps> = ({
             </Link>
           </div>
 
-          {/* Center: Search Bar */}
-          <div className="flex-1 max-w-md hidden md:block">
+          {/* Center: Desktop Prominent Search Bar */}
+          <div className="flex-1 max-w-xl hidden md:block">
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search products, vendors, categories..."
+                placeholder="Search products, brands, or categories..."
                 value={searchQuery}
                 onChange={(e) => onSearchChange?.(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full bg-slate-100/80 text-sm text-slate-900 pl-10 pr-4 py-2 rounded-xl border border-slate-200/80 outline-none focus:outline-none focus-visible:outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-slate-400 shadow-inner"
+                className="w-full bg-slate-100/90 hover:bg-slate-100 text-sm text-slate-900 pl-10 pr-4 py-2 rounded-xl border border-slate-200/60 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400"
               />
             </div>
           </div>
 
-          {/* Right Action Controls - Unified Harmonized Design */}
-          <div className="flex items-center gap-2">
+          {/* Right Action Controls */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             
-            {/* User Account Controls */}
-            <UserNavControls />
+            {/* Mobile Search Toggle Button */}
+            <button
+              onClick={() => setShowMobileSearch(!showMobileSearch)}
+              className="p-2 md:hidden rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              title="Toggle Search"
+            >
+              <Search className="w-5 h-5" />
+            </button>
 
             {/* Merchant Dashboard Access */}
             {user?.role === 'VENDOR' && (
               <Link
                 href="/vendor/dashboard"
-                className={`h-10 px-3.5 flex items-center gap-2 rounded-xl text-xs font-bold transition-all shrink-0 border ${
+                className={`h-9 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                   isVendorActive
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
-                    : 'bg-slate-100/90 text-slate-700 border-slate-200/80 hover:bg-slate-200/80 hover:text-slate-900 shadow-sm'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                <Store className={`w-4 h-4 ${isVendorActive ? 'text-white' : 'text-indigo-600'}`} />
+                <Store className="w-4 h-4 text-slate-500" />
                 <span className="hidden lg:inline">Store Portal</span>
               </Link>
             )}
@@ -289,52 +304,89 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user?.role === 'ADMIN' && (
               <Link
                 href="/admin/dashboard"
-                className={`h-10 px-3.5 flex items-center gap-2 rounded-xl text-xs font-bold transition-all shrink-0 border ${
+                className={`h-9 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
                   isAdminActive
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
-                    : 'bg-slate-100/90 text-slate-700 border-slate-200/80 hover:bg-slate-200/80 hover:text-slate-900 shadow-sm'
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                <ShieldCheck className={`w-4 h-4 ${isAdminActive ? 'text-white' : 'text-indigo-600'}`} />
+                <ShieldCheck className="w-4 h-4 text-slate-500" />
                 <span className="hidden lg:inline">Admin Portal</span>
               </Link>
             )}
 
-            {/* Orders & Tracking */}
-            <Link
-              href="/orders/latest"
-              className={`h-10 px-3.5 flex items-center gap-2 rounded-xl text-xs font-bold transition-all shrink-0 border ${
-                isOrdersActive
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
-                  : 'bg-slate-100/90 text-slate-700 border-slate-200/80 hover:bg-slate-200/80 hover:text-slate-900 shadow-sm'
+            {/* Group Shopping Party Button */}
+            <button
+              onClick={() => setIsGroupModalOpen(true)}
+              className={`h-9 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+                activeSession
+                  ? 'bg-purple-50 text-purple-700 border border-purple-200/60'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <PackageCheck className={`w-4 h-4 ${isOrdersActive ? 'text-white' : 'text-indigo-600'}`} />
+              <Users className="w-4 h-4 text-slate-500" />
+              <span className="hidden sm:inline">
+                {activeSession ? 'Party Active' : 'Group Shop'}
+              </span>
+              {activeSession && (
+                <span className="bg-purple-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {activeSession.members.length}
+                </span>
+              )}
+            </button>
+
+            {/* Orders & Tracking */}
+            <Link
+              href="/orders"
+              className={`h-9 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0 ${
+                isOrdersActive
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <PackageCheck className="w-4 h-4 text-slate-500" />
               <span className="hidden sm:inline">Orders</span>
               {ordersCount > 0 && (
-                <span className={`w-4 h-4 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
-                  isOrdersActive ? 'bg-white text-indigo-600' : 'bg-indigo-600 text-white'
-                }`}>
+                <span className="bg-slate-200 text-slate-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                   {ordersCount}
                 </span>
               )}
             </Link>
 
+            {/* Saved Wishlist Button */}
+            <button
+              onClick={() => setIsWishlistOpen(true)}
+              className="h-9 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0 cursor-pointer"
+              title="View Wishlist"
+            >
+              <Heart className="w-4 h-4 text-rose-500 fill-rose-500/20" />
+              <span className="hidden sm:inline">Wishlist</span>
+              {wishlistCount > 0 && (
+                <span className="bg-rose-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
+                  {wishlistCount}
+                </span>
+              )}
+            </button>
+
+            {/* In-App Notifications Drawer */}
+            <NotificationDrawer />
+
+            {/* User Account Controls */}
+            <UserNavControls />
+
             {/* Shopping Cart Button */}
             <button
               onClick={onOpenCart}
-              className={`h-10 px-4 flex items-center gap-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 border ${
+              className={`h-9 px-2.5 sm:px-3.5 flex items-center gap-1.5 sm:gap-2 rounded-lg text-xs font-semibold transition-all active:scale-95 shrink-0 ${
                 isCartActive
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
-                  : 'bg-slate-100/90 text-slate-700 border-slate-200/80 hover:bg-slate-200/80 hover:text-slate-900 shadow-sm'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
               }`}
             >
-              <ShoppingBag className={`w-4 h-4 ${isCartActive ? 'text-white' : 'text-indigo-600'}`} />
+              <ShoppingBag className="w-4 h-4 text-white" />
               <span className="hidden sm:inline">Cart</span>
               {totalCartCount > 0 && (
-                <span className={`text-xs font-black px-2 py-0.5 rounded-full shadow-sm ${
-                  isCartActive ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
-                }`}>
+                <span className="bg-white text-indigo-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
                   {totalCartCount}
                 </span>
               )}
@@ -342,8 +394,26 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Category Tabs Bar */}
-        <div className="flex items-center gap-2 flex-wrap py-2.5 relative z-30 border-t border-slate-100 overflow-visible">
+        {/* Mobile Search Expand Bar */}
+        {showMobileSearch && (
+          <div className="pb-3 md:hidden animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search products, brands, categories..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange?.(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-full bg-slate-100 text-sm text-slate-900 pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:bg-white focus:border-indigo-600 focus:outline-none"
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Category Tabs Bar — Horizontal Scrollable Container */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2.5 relative z-30 border-t border-slate-100 whitespace-nowrap">
           {/* All Products Tab */}
           <button
             onClick={() => handleCategoryClick('all')}

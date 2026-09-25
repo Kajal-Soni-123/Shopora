@@ -52,7 +52,7 @@ export const Modal: React.FC<ModalProps> = React.memo(({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
@@ -63,7 +63,7 @@ export const Modal: React.FC<ModalProps> = React.memo(({
       {/* Modal Shell */}
       <div
         className={cn(
-          'relative w-full bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200 text-slate-900',
+          'relative w-full max-w-[calc(100vw-1rem)] bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200 text-slate-900',
           maxWidthMap[maxWidth],
           className
         )}
@@ -72,10 +72,10 @@ export const Modal: React.FC<ModalProps> = React.memo(({
       >
         {/* Header */}
         {(title || subtitle) && (
-          <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+          <div className="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-6 pb-3 sm:pb-4 border-b border-slate-100">
             <div>
-              {title && <h2 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h2>}
-              {subtitle && <p className="text-xs text-slate-500 mt-1 font-medium">{subtitle}</p>}
+              {title && <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">{title}</h2>}
+              {subtitle && <p className="text-xs text-slate-500 mt-0.5 sm:mt-1 font-medium">{subtitle}</p>}
             </div>
             <button
               onClick={onClose}
@@ -88,13 +88,13 @@ export const Modal: React.FC<ModalProps> = React.memo(({
         )}
 
         {/* Body */}
-        <div className="px-6 py-5 max-h-[75vh] overflow-y-auto custom-scrollbar">
+        <div className="px-4 sm:px-6 py-4 sm:py-5 max-h-[80vh] overflow-y-auto custom-scrollbar">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 sm:gap-3 px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-slate-100">
             {footer}
           </div>
         )}

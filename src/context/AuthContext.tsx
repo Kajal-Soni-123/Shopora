@@ -36,8 +36,11 @@ interface AuthContextType {
   isAuthModalOpen: boolean;
   authModalTab: 'login' | 'signup';
   isLoginRequiredModalOpen: boolean;
+  isForgotPasswordModalOpen: boolean;
   openAuthModal: (tab?: 'login' | 'signup') => void;
   closeAuthModal: () => void;
+  openForgotPasswordModal: () => void;
+  closeForgotPasswordModal: () => void;
   openLoginRequiredModal: () => void;
   closeLoginRequiredModal: () => void;
   requireAuth: (action: () => void) => boolean;
@@ -55,14 +58,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalTab, setAuthModalTab] = useState<'login' | 'signup'>('login');
   const [isLoginRequiredModalOpen, setIsLoginRequiredModalOpen] = useState<boolean>(false);
+  const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState<boolean>(false);
 
   const openAuthModal = (tab: 'login' | 'signup' = 'login') => {
     setAuthModalTab(tab);
     setIsAuthModalOpen(true);
+    setIsForgotPasswordModalOpen(false);
   };
 
   const closeAuthModal = () => {
     setIsAuthModalOpen(false);
+  };
+
+  const openForgotPasswordModal = () => {
+    setIsAuthModalOpen(false);
+    setIsForgotPasswordModalOpen(true);
+  };
+
+  const closeForgotPasswordModal = () => {
+    setIsForgotPasswordModalOpen(false);
   };
 
   const openLoginRequiredModal = () => {
@@ -170,8 +184,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthModalOpen,
         authModalTab,
         isLoginRequiredModalOpen,
+        isForgotPasswordModalOpen,
         openAuthModal,
         closeAuthModal,
+        openForgotPasswordModal,
+        closeForgotPasswordModal,
         openLoginRequiredModal,
         closeLoginRequiredModal,
         requireAuth,

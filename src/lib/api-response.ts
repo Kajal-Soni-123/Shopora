@@ -58,6 +58,10 @@ export class ApiResponse {
     return ApiResponse.error(message, 403);
   }
 
+  static tooManyRequests(message = 'Too many requests', details?: unknown) {
+    return ApiResponse.error(message, 429, details);
+  }
+
   static serverError(message = 'Internal Server Error', details?: unknown) {
     return ApiResponse.error(message, 500, details);
   }

@@ -67,12 +67,25 @@ export async function sendOrderConfirmationSMS(
       try {
         const fromNumber = channel === 'WHATSAPP' ? twilioWhatsapp : twilioPhone;
         const toNumber = channel === 'WHATSAPP' ? `whatsapp:${formattedPhone}` : formattedPhone;
+        const contentSid = process.env.TWILIO_CONTENT_SID || process.env.CONTENT_SID;
 
-        const res = await client.messages.create({
-          body: messageText,
+        const messagePayload: any = {
           from: fromNumber,
           to: toNumber,
-        });
+        };
+
+        if (channel === 'WHATSAPP' && contentSid) {
+          messagePayload.contentSid = contentSid;
+          messagePayload.contentVariables = JSON.stringify({
+            '1': order.customerName,
+            '2': order.orderNumber,
+            '3': order.totalAmount.toFixed(2),
+          });
+        } else {
+          messagePayload.body = messageText;
+        }
+
+        const res = await client.messages.create(messagePayload);
 
         console.log(`[Twilio ${channel}] Dispatched message ${res.sid} to ${toNumber}`);
         return { success: true, messageId: res.sid, simulated: false };
@@ -114,12 +127,25 @@ export async function sendShippingUpdateSMS(
       try {
         const fromNumber = channel === 'WHATSAPP' ? twilioWhatsapp : twilioPhone;
         const toNumber = channel === 'WHATSAPP' ? `whatsapp:${formattedPhone}` : formattedPhone;
+        const contentSid = process.env.TWILIO_CONTENT_SID || process.env.CONTENT_SID;
 
-        const res = await client.messages.create({
-          body: messageText,
+        const messagePayload: any = {
           from: fromNumber,
           to: toNumber,
-        });
+        };
+
+        if (channel === 'WHATSAPP' && contentSid) {
+          messagePayload.contentSid = contentSid;
+          messagePayload.contentVariables = JSON.stringify({
+            '1': shipping.vendorName,
+            '2': shipping.subOrderNumber,
+            '3': shipping.trackingNumber,
+          });
+        } else {
+          messagePayload.body = messageText;
+        }
+
+        const res = await client.messages.create(messagePayload);
 
         console.log(`[Twilio Shipping ${channel}] Dispatched update ${res.sid} to ${toNumber}`);
         return { success: true, messageId: res.sid, simulated: false };

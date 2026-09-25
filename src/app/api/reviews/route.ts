@@ -36,6 +36,40 @@ export async function POST(request: Request) {
       return ApiResponse.notFound('Product not found.');
     }
 
+    // Verify user has purchased this product and it has been delivered
+    const userPurchase = await prisma.order.findFirst({
+      where: {
+        userId: sessionUser.userId,
+        paymentStatus: { in: ['PAID', 'COD_PENDING', 'COD_COLLECTED'] },
+        OR: [
+          { aggregateStatus: 'DELIVERED' },
+          {
+            subOrders: {
+              some: {
+                status: 'DELIVERED',
+                items: {
+                  some: { productId },
+                },
+              },
+            },
+          },
+        ],
+        subOrders: {
+          some: {
+            items: {
+              some: { productId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!userPurchase) {
+      return ApiResponse.forbidden(
+        'Only verified buyers who have received their delivered product can leave a review.'
+      );
+    }
+
     // Create the review
     const review = await prisma.review.create({
       data: {

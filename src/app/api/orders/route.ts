@@ -6,6 +6,7 @@ import { SHIPPING_CARRIERS, DEFAULT_VENDOR_FALLBACK } from '@/lib/constants';
 import { sendOrderConfirmationSMS } from '@/lib/twilio';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { checkCodAvailability } from '@/lib/shipping/codService';
 
 // Helper: Add business days (skipping Sat/Sun)
 function addBusinessDays(date: Date, days: number): Date {
@@ -81,9 +82,9 @@ export async function GET(request: Request) {
 
     if (orderNumber) {
       whereClause.orderNumber = orderNumber;
-    } else if (sessionUser?.id) {
+    } else if (sessionUser?.userId) {
       whereClause.OR = [
-        { userId: sessionUser.id },
+        { userId: sessionUser.userId },
         { customerEmail: sessionUser.email },
       ];
     } else if (queryEmail) {
@@ -187,7 +188,6 @@ export async function POST(request: Request) {
 
     const orderNumber = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
     const createdDate = new Date();
-    const finalTransactionId = transactionId || 'pay_' + Math.random().toString(36).substring(2, 11);
 
     // Get list of valid vendor IDs from database or initial fallback
     const dbVendors = await prisma.vendor.findMany({ select: { id: true } });
@@ -234,29 +234,56 @@ export async function POST(request: Request) {
       });
     });
 
+    // Check COD validation if paymentMethod is COD
+    const isCod = (paymentMethod || '').toUpperCase() === 'COD';
+    let isCodAllowed = true;
+    let codCheckReason = '';
+
+    if (isCod) {
+      // Extract pincode from shipping address (e.g. 6-digit number at end or in text)
+      const pincodeMatch = (shippingAddress || '').match(/\b\d{6}\b/);
+      const pincode = pincodeMatch ? pincodeMatch[0] : '400001';
+
+      const codValidation = await checkCodAvailability({
+        pincode,
+        orderAmount: masterTotalAmount,
+        vendorIds: Array.from(validVendorIds),
+      });
+
+      if (!codValidation.allowed) {
+        return ApiResponse.badRequest(codValidation.reason || 'Cash on Delivery is unavailable for this order.');
+      }
+    }
+
+    const initialPaymentStatus = isCod ? 'COD_PENDING' : 'PAID';
+    const finalTransactionId = isCod
+      ? 'cod_' + Math.random().toString(36).substring(2, 11)
+      : transactionId || 'pay_' + Math.random().toString(36).substring(2, 11);
+
     // Save master order and sub-orders in PostgreSQL via Prisma
-    const newOrder = await prisma.order.create({
+    const newOrder: any = await prisma.order.create({
       data: {
         orderNumber,
-        userId: sessionUser?.id || null,
+        userId: sessionUser?.userId || null,
         customerName: customerName || sessionUser?.name || 'Customer',
         customerEmail: customerEmail || sessionUser?.email || 'customer@shopora.com',
-        customerPhone: customerPhone || sessionUser?.phone || null,
-        shippingAddress: shippingAddress || sessionUser?.homeAddress || 'Standard Delivery Address',
-        paymentMethod: paymentMethod || 'CREDIT_CARD',
-        paymentStatus: 'PAID',
+        customerPhone: customerPhone || null,
+        shippingAddress: shippingAddress || 'Standard Delivery Address',
+        paymentMethod: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
+        paymentStatus: initialPaymentStatus,
+        codAmount: isCod ? masterTotalAmount : null,
         transactionId: finalTransactionId,
         paymentDetails: (paymentDetails as any) || {
-          method: paymentMethod || 'CREDIT_CARD',
-          maskedDetails: '•••• 4242',
-          provider: 'Shopora Pay',
+          method: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
+          maskedDetails: isCod ? 'Cash on Delivery' : '•••• 4242',
+          provider: isCod ? 'Pay on Delivery' : 'Shopora Pay',
         },
         totalAmount: masterTotalAmount,
         aggregateStatus: 'PENDING',
         subOrders: {
           create: subOrdersData,
         },
-      },
+      } as any,
       include: {
         subOrders: {
           include: {
@@ -273,13 +300,17 @@ export async function POST(request: Request) {
 
     // Trigger SMS/WhatsApp notification if phone is present
     if (newOrder.customerPhone) {
-      sendOrderConfirmationSMS(newOrder.customerPhone, {
-        orderNumber: newOrder.orderNumber,
-        customerName: newOrder.customerName,
-        totalAmount: newOrder.totalAmount,
-        itemCount: items.length,
-        subOrderCount: newOrder.subOrders.length,
-      }).catch((err) => console.error('Background Twilio SMS Error:', err));
+      sendOrderConfirmationSMS(
+        newOrder.customerPhone,
+        {
+          orderNumber: newOrder.orderNumber,
+          customerName: newOrder.customerName,
+          totalAmount: newOrder.totalAmount,
+          itemCount: items.length,
+          subOrderCount: newOrder.subOrders.length,
+        },
+        'WHATSAPP'
+      ).catch((err) => console.error('Background Twilio WhatsApp Error:', err));
     }
 
     // Format final object for client

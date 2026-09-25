@@ -10,23 +10,29 @@ datasource db {
 }
 
 model User {
-  id                 String       @id @default(cuid())
+  id                 String          @id @default(cuid())
   name               String
-  email              String       @unique
+  email              String          @unique
   password           String
-  role               String       @default("CUSTOMER") // CUSTOMER, ADMIN, VENDOR
+  role               String          @default("CUSTOMER") // CUSTOMER, ADMIN, VENDOR
   avatar             String?
   phone              String?
   homeAddress        String?
   workAddress        String?
-  primaryAddressType String?      @default("HOME") // HOME, WORK
+  primaryAddressType String?         @default("HOME") // HOME, WORK
   vendorId           String?
-  vendor             Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendor             Vendor?         @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   orders             Order[]
   cartItems          CartItem[]
   reviews            Review[]
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  returnRequests     ReturnRequest[]
+  refunds            Refund[]
+  hostedGroupSessions GroupShoppingSession[] @relation("GroupHost")
+  groupMemberships   GroupSessionMember[]
+  notifications      Notification[]
+  wishlistItems      WishlistItem[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 }
 
 model Vendor {
@@ -40,6 +46,7 @@ model Vendor {
   subOrders         SubOrder[]
   categoryRequests  CategoryRequest[]
   offers            Offer[]
+  returnRequests    ReturnRequest[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 }
@@ -88,7 +95,10 @@ model Product {
   category     Category    @relation(fields: [categoryId], references: [id])
   orderItems   OrderItem[]
   cartItems    CartItem[]
+  groupCartItems GroupCartItem[]
+  groupChatMessages GroupChatMessage[]
   reviews      Review[]
+  wishlistItems WishlistItem[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 }
@@ -122,52 +132,184 @@ model Review {
 }
 
 model Order {
-  id              String     @id @default(cuid())
-  orderNumber     String     @unique @default(cuid())
-  userId          String?
-  user            User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  customerName    String
-  customerEmail   String
-  customerPhone   String?
-  shippingAddress String
-  paymentMethod   String     @default("CREDIT_CARD")
-  paymentStatus   String     @default("PAID") // PENDING, PAID, FAILED, REFUNDED
-  transactionId   String?
-  paymentDetails  Json?
-  totalAmount     Float
-  aggregateStatus String     @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED
-  subOrders       SubOrder[]
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                  String          @id @default(cuid())
+  orderNumber         String          @unique @default(cuid())
+  userId              String?
+  user                User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customerName        String
+  customerEmail       String
+  customerPhone       String?
+  shippingAddress     String
+  paymentMethod       String          @default("CREDIT_CARD") // CREDIT_CARD, DEBIT_CARD, UPI, NET_BANKING, COD
+  paymentStatus       String          @default("PAID") // PENDING, AUTHORIZED, PAID, FAILED, REFUNDED, PARTIALLY_REFUNDED, COD_PENDING, COD_COLLECTED
+  codAmount           Float?          @map("cod_amount")
+  codCollectedAmount  Float?          @map("cod_collected_amount")
+  transactionId       String?
+  paymentDetails      Json?
+  totalAmount         Float
+  aggregateStatus     String          @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, PARTIALLY_CANCELLED, CANCELLED
+  cancelledAt         DateTime?       @map("cancelled_at")
+  cancellationReason  String?         @map("cancellation_reason")
+  cancelledBy         String?         @map("cancelled_by")
+  subOrders           SubOrder[]
+  returnRequests      ReturnRequest[]
+  refunds             Refund[]
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
 }
 
 model SubOrder {
-  id              String      @id @default(cuid())
-  subOrderNumber  String      @unique @default(cuid())
-  orderId         String
-  order           Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  vendorId        String
-  vendor          Vendor      @relation(fields: [vendorId], references: [id])
-  status          String      @default("PROCESSING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED
-  subtotal        Float
-  trackingNumber  String?
-  shippingCarrier String?
-  expectedDelivery String?
-  statusHistory   Json?
-  items           OrderItem[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                 String          @id @default(cuid())
+  subOrderNumber     String          @unique @default(cuid())
+  orderId            String
+  order              Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendorId           String
+  vendor             Vendor          @relation(fields: [vendorId], references: [id])
+  status             String          @default("PROCESSING") // PENDING, CONFIRMED, PROCESSING, PACKED, READY_FOR_PICKUP, SHIPPED, DELIVERED, PARTIALLY_CANCELLED, CANCELLED
+  subtotal           Float
+  trackingNumber     String?
+  shippingCarrier    String?
+  expectedDelivery   String?
+  statusHistory      Json?
+  cancelledAt        DateTime?       @map("cancelled_at")
+  cancellationReason String?         @map("cancellation_reason")
+  cancelledBy        String?         @map("cancelled_by")
+  items              OrderItem[]
+  shipments          Shipment[]
+  returnRequests     ReturnRequest[]
+  refunds            Refund[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+}
+
+model Shipment {
+  id                 String          @id @default(cuid())
+  fulfillmentId      String          @map("fulfillment_id")
+  fulfillment        SubOrder        @relation(fields: [fulfillmentId], references: [id], onDelete: Cascade)
+  provider           String          @default("mock")
+  providerOrderId    String?         @map("provider_order_id")
+  providerShipmentId String?         @map("provider_shipment_id")
+  awbNumber          String?         @map("awb_number")
+  trackingUrl        String?         @map("tracking_url")
+  status             String          @default("CREATED") // CREATED, LABEL_GENERATED, PICKUP_SCHEDULED, PICKED_UP, IN_TRANSIT, OUT_FOR_DELIVERY, DELIVERED, DELIVERY_FAILED, CANCELLED, RETURN_REQUESTED, RETURN_PICKUP_SCHEDULED, RETURN_PICKED_UP, RETURN_IN_TRANSIT, RETURNED
+  weight             Float           @default(0.5)
+  length             Float           @default(10.0)
+  breadth            Float           @default(10.0)
+  height             Float           @default(10.0)
+  labelUrl           String?         @map("label_url")
+  pickupScheduledAt  DateTime?       @map("pickup_scheduled_at")
+  pickedUpAt         DateTime?       @map("picked_up_at")
+  deliveredAt        DateTime?       @map("delivered_at")
+  trackingEvents     TrackingEvent[]
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  @@map("shipments")
+}
+
+model TrackingEvent {
+  id            String   @id @default(cuid())
+  shipmentId    String   @map("shipment_id")
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status        String
+  location      String?
+  description   String
+  eventTime     DateTime @default(now()) @map("event_time")
+  providerEvent String?  @map("provider_event")
+  rawPayload    Json?    @map("raw_payload")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("tracking_events")
 }
 
 model OrderItem {
-  id                 String   @id @default(cuid())
+  id                 String       @id @default(cuid())
   subOrderId         String
-  subOrder           SubOrder @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  subOrder           SubOrder     @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
   productId          String
-  product            Product  @relation(fields: [productId], references: [id])
+  product            Product      @relation(fields: [productId], references: [id])
   quantity           Int
   price              Float
+  status             String       @default("ACTIVE") // ACTIVE, CANCELLED, RETURN_REQUESTED, RETURNED
+  cancelledAt        DateTime?    @map("cancelled_at")
+  cancellationReason String?      @map("cancellation_reason")
   selectedAttributes Json?
+  returnItems        ReturnItem[]
+  refunds            Refund[]
+}
+
+model ReturnRequest {
+  id           String       @id @default(cuid())
+  returnNumber String       @unique @default(cuid()) @map("return_number")
+  orderId      String       @map("order_id")
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  subOrderId   String       @map("sub_order_id")
+  subOrder     SubOrder     @relation(fields: [subOrderId], references: [id], onDelete: Cascade)
+  vendorId     String       @map("vendor_id")
+  vendor       Vendor       @relation(fields: [vendorId], references: [id])
+  userId       String       @map("user_id")
+  user         User         @relation(fields: [userId], references: [id])
+  status       String       @default("RETURN_REQUESTED") // RETURN_REQUESTED, UNDER_REVIEW, APPROVED, REJECTED, PICKUP_SCHEDULED, PICKED_UP, IN_TRANSIT, RECEIVED, REFUND_PROCESSING, COMPLETED
+  reason       String       // DAMAGED, DEFECTIVE, WRONG_PRODUCT, WRONG_SIZE, NOT_AS_DESCRIBED, MISSING_PARTS, CHANGED_MIND, OTHER
+  customerNote String?      @map("customer_note")
+  images       String[]     @default([])
+  refundAmount Float        @map("refund_amount")
+  reverseAwb   String?      @map("reverse_awb")
+  adminNote    String?      @map("admin_note")
+  requestedAt  DateTime     @default(now()) @map("requested_at")
+  approvedAt   DateTime?    @map("approved_at")
+  rejectedAt   DateTime?    @map("rejected_at")
+  pickedUpAt   DateTime?    @map("picked_up_at")
+  receivedAt   DateTime?    @map("received_at")
+  completedAt  DateTime?    @map("completed_at")
+  returnItems  ReturnItem[]
+  refunds      Refund[]
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@map("return_requests")
+}
+
+model ReturnItem {
+  id              String        @id @default(cuid())
+  returnRequestId String        @map("return_request_id")
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItemId     String        @map("order_item_id")
+  orderItem       OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  quantity        Int           @default(1)
+  reason          String
+  condition       String?
+  refundAmount    Float         @map("refund_amount")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@map("return_items")
+}
+
+model Refund {
+  id               String         @id @default(cuid())
+  refundNumber     String         @unique @default(cuid()) @map("refund_number")
+  orderId          String         @map("order_id")
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  subOrderId       String?        @map("sub_order_id")
+  subOrder         SubOrder?      @relation(fields: [subOrderId], references: [id], onDelete: SetNull)
+  orderItemId      String?        @map("order_item_id")
+  orderItem        OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  returnRequestId  String?        @map("return_request_id")
+  returnRequest    ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: SetNull)
+  userId           String         @map("user_id")
+  user             User           @relation(fields: [userId], references: [id])
+  amount           Float
+  method           String         @default("ORIGINAL_PAYMENT_METHOD") // ORIGINAL_PAYMENT_METHOD, BANK_TRANSFER, UPI, WALLET, STORE_CREDIT, MANUAL
+  status           String         @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  providerRefundId String?        @map("provider_refund_id")
+  reason           String
+  initiatedAt      DateTime       @default(now()) @map("initiated_at")
+  completedAt      DateTime?      @map("completed_at")
+  failedAt         DateTime?      @map("failed_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  @@map("refunds")
 }
 
 model Offer {
@@ -190,3 +332,120 @@ model Offer {
 
   @@map("offers")
 }
+
+model GroupShoppingSession {
+  id           String               @id @default(cuid())
+  code         String               @unique // Short join code (e.g. GRP-849201)
+  title        String               @default("Group Shopping Party")
+  hostUserId   String               @map("host_user_id")
+  hostUser     User                 @relation("GroupHost", fields: [hostUserId], references: [id], onDelete: Cascade)
+  checkoutMode String               @default("HOST_PAY") @map("checkout_mode") // HOST_PAY, SPLIT_PAY
+  status       String               @default("ACTIVE") // ACTIVE, WAITING_FOR_PAYMENTS, CHECKED_OUT, CLOSED
+  expiresAt    DateTime             @map("expires_at")
+  members      GroupSessionMember[]
+  items        GroupCartItem[]
+  messages     GroupChatMessage[]
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+
+  @@map("group_shopping_sessions")
+}
+
+model GroupSessionMember {
+  id         String               @id @default(cuid())
+  sessionId  String               @map("session_id")
+  session    GroupShoppingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId     String?              @map("user_id")
+  user       User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  guestName  String               @map("guest_name")
+  guestEmail String?              @map("guest_email")
+  role       String               @default("MEMBER") // HOST, MEMBER
+  status     String               @default("JOINED") // INVITED, JOINED, PAID
+  items      GroupCartItem[]
+  messages   GroupChatMessage[]
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+
+  @@map("group_session_members")
+}
+
+model GroupCartItem {
+  id         String               @id @default(cuid())
+  sessionId  String               @map("session_id")
+  session    GroupShoppingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  addedById  String               @map("added_by_id")
+  addedBy    GroupSessionMember   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  productId  String               @map("product_id")
+  product    Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity   Int                  @default(1)
+  attributes Json?
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+
+  @@map("group_cart_items")
+}
+
+model GroupChatMessage {
+  id             String               @id @default(cuid())
+  sessionId      String               @map("session_id")
+  session        GroupShoppingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  senderId       String               @map("sender_id")
+  sender         GroupSessionMember   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  type           String               @default("TEXT") // TEXT, PRODUCT_SUGGESTION, SYSTEM_EVENT
+  content        String?
+  productId      String?              @map("product_id")
+  product        Product?             @relation(fields: [productId], references: [id], onDelete: SetNull)
+  replyToId      String?              @map("reply_to_id")
+  replyToMessage GroupChatMessage?    @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        GroupChatMessage[]   @relation("MessageReplies")
+  reactions      Json?                // e.g. { "member_id_1": "LIKE", "member_id_2": "LOVE" }
+  votes          Json?                // e.g. { "member_id_1": "YES", "member_id_2": "NO" }
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  @@map("group_chat_messages")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email     String?  // Target guest/user email
+  title     String
+  message   String
+  type      String   @default("INFO") // CO_SHOP_INVITE, CATEGORY_REQUEST, PRODUCT_BACK_IN_STOCK, ORDER_UPDATE, SYSTEM
+  link      String?  // Target route or modal trigger URL
+  isRead    Boolean  @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("notifications")
+}
+
+model WishlistItem {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, productId])
+  @@map("wishlist_items")
+}
+
+model PasswordResetToken {
+  id             String    @id @default(cuid())
+  email          String
+  otpHash        String    @map("otp_hash")
+  resetTokenHash String?   @unique @map("reset_token_hash")
+  expiresAt      DateTime  @map("expires_at")
+  verifiedAt     DateTime? @map("verified_at")
+  usedAt         DateTime? @map("used_at")
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@map("password_reset_tokens")
+}
+

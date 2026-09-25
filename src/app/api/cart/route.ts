@@ -14,12 +14,12 @@ function areAttributesEqual(attr1: any, attr2: any): boolean {
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
-    if (!sessionUser?.id) {
+    if (!sessionUser?.userId) {
       return ApiResponse.success([]);
     }
 
     const cartItems = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.id },
+      where: { userId: sessionUser.userId },
       include: {
         product: {
           include: {
@@ -50,7 +50,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const sessionUser = await getSessionUser();
-    if (!sessionUser?.id) {
+    if (!sessionUser?.userId) {
       return ApiResponse.badRequest('Please sign in to add items to your account cart');
     }
 
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
     // Find existing cart item for same product & attributes
     const userCart = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.id, productId },
+      where: { userId: sessionUser.userId, productId },
     });
 
     const existingItem = userCart.find((ci) =>
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     } else {
       await prisma.cartItem.create({
         data: {
-          userId: sessionUser.id,
+          userId: sessionUser.userId,
           productId,
           quantity,
           attributes: attributes || null,
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
 
     // Fetch updated cart
     const updatedCart = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.id },
+      where: { userId: sessionUser.userId },
       include: { product: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const sessionUser = await getSessionUser();
-    if (!sessionUser?.id) {
+    if (!sessionUser?.userId) {
       return ApiResponse.badRequest('Unauthorized');
     }
 
@@ -149,11 +149,11 @@ export async function PUT(request: Request) {
     } else if (productId) {
       if (quantity <= 0) {
         await prisma.cartItem.deleteMany({
-          where: { userId: sessionUser.id, productId },
+          where: { userId: sessionUser.userId, productId },
         });
       } else {
         await prisma.cartItem.updateMany({
-          where: { userId: sessionUser.id, productId },
+          where: { userId: sessionUser.userId, productId },
           data: { quantity },
         });
       }
@@ -163,7 +163,7 @@ export async function PUT(request: Request) {
 
     // Fetch updated cart
     const updatedCart = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.id },
+      where: { userId: sessionUser.userId },
       include: { product: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -188,7 +188,7 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const sessionUser = await getSessionUser();
-    if (!sessionUser?.id) {
+    if (!sessionUser?.userId) {
       return ApiResponse.success([]);
     }
 
@@ -199,7 +199,7 @@ export async function DELETE(request: Request) {
 
     if (clearAll) {
       await prisma.cartItem.deleteMany({
-        where: { userId: sessionUser.id },
+        where: { userId: sessionUser.userId },
       });
     } else if (cartItemId) {
       await prisma.cartItem.delete({
@@ -207,12 +207,12 @@ export async function DELETE(request: Request) {
       });
     } else if (productId) {
       await prisma.cartItem.deleteMany({
-        where: { userId: sessionUser.id, productId },
+        where: { userId: sessionUser.userId, productId },
       });
     }
 
     const updatedCart = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.id },
+      where: { userId: sessionUser.userId },
       include: { product: true },
       orderBy: { createdAt: 'asc' },
     });

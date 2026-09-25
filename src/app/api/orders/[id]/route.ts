@@ -27,6 +27,18 @@ export async function GET(
         subOrders: {
           include: {
             vendor: true,
+            shipments: {
+              include: {
+                trackingEvents: {
+                  orderBy: {
+                    eventTime: 'asc',
+                  },
+                },
+              },
+              orderBy: {
+                createdAt: 'desc',
+              },
+            },
             items: {
               include: {
                 product: true,
@@ -67,6 +79,27 @@ export async function GET(
         shippingCarrier: sub.shippingCarrier,
         expectedDelivery: sub.expectedDelivery || undefined,
         statusHistory: (sub.statusHistory as any) || [],
+        shipments: sub.shipments.map((s) => ({
+          id: s.id,
+          provider: s.provider,
+          providerOrderId: s.providerOrderId,
+          providerShipmentId: s.providerShipmentId,
+          awbNumber: s.awbNumber,
+          trackingUrl: s.trackingUrl,
+          status: s.status,
+          labelUrl: s.labelUrl,
+          pickupScheduledAt: s.pickupScheduledAt?.toISOString(),
+          pickedUpAt: s.pickedUpAt?.toISOString(),
+          deliveredAt: s.deliveredAt?.toISOString(),
+          trackingEvents: s.trackingEvents.map((e) => ({
+            id: e.id,
+            status: e.status,
+            location: e.location,
+            description: e.description,
+            eventTime: e.eventTime.toISOString(),
+            providerEvent: e.providerEvent,
+          })),
+        })),
         createdAt: sub.createdAt.toISOString(),
         items: sub.items.map((item) => ({
           product: {

@@ -58,7 +58,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
 
       {/* Slide-out Sidebar Drawer */}
       <div className="fixed inset-y-0 left-0 max-w-full flex">
-        <div className="w-screen max-w-sm bg-white shadow-2xl flex flex-col justify-between border-r border-slate-200/80 animate-in slide-in-from-left duration-300">
+        <div className="w-screen max-w-[calc(100vw-2rem)] sm:max-w-sm bg-white shadow-2xl flex flex-col justify-between border-r border-slate-200/80 animate-in slide-in-from-left duration-300">
           
           {/* Top Section */}
           <div className="flex-1 overflow-y-auto">
@@ -172,7 +172,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
               </Link>
 
               <Link
-                href="/orders/latest"
+                href="/orders"
                 onClick={onClose}
                 className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors"
               >

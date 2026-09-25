@@ -14,6 +14,7 @@ import { VendorCategoryRequestsSection, VendorCategoryRequest } from '@/componen
 import { VendorReviewsSection } from '@/components/vendor/VendorReviewsSection';
 import VendorSalesAnalyticsSection from '@/components/vendor/VendorSalesAnalyticsSection';
 import { VendorOffersSection } from '@/components/vendor/VendorOffersSection';
+import { VendorReturnCard, VendorReturnRequestData } from '@/components/vendor/VendorReturnCard';
 import { Navbar } from '@/components/Navbar';
 import { SidebarNav } from '@/components/SidebarNav';
 import { CartDrawer } from '@/components/CartDrawer';
@@ -29,6 +30,7 @@ import {
   ArrowLeft,
   Loader2,
   FolderPlus,
+  RotateCcw,
 } from 'lucide-react';
 
 export default function VendorDashboardPage() {
@@ -38,9 +40,10 @@ export default function VendorDashboardPage() {
   const [products, setProducts] = useState<VendorProduct[]>([]);
   const [subOrders, setSubOrders] = useState<VendorSubOrderData[]>([]);
   const [categoryRequests, setCategoryRequests] = useState<VendorCategoryRequest[]>([]);
+  const [returnRequests, setReturnRequests] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    'products' | 'orders' | 'reviews' | 'sales' | 'offers' | 'category-requests'
+    'products' | 'orders' | 'returns' | 'reviews' | 'sales' | 'offers' | 'category-requests'
   >('products');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCategoryRequestModalOpen, setIsCategoryRequestModalOpen] = useState(false);
@@ -55,10 +58,11 @@ export default function VendorDashboardPage() {
   const fetchVendorData = async () => {
     try {
       setLoadingData(true);
-      const [resProducts, resOrders, resRequests] = await Promise.all([
+      const [resProducts, resOrders, resRequests, resReturns] = await Promise.all([
         fetch('/api/vendor/products'),
         fetch('/api/vendor/orders'),
         fetch('/api/vendor/category-requests'),
+        fetch('/api/returns'),
       ]);
 
       let dbSubOrders: any[] = [];
@@ -73,6 +77,10 @@ export default function VendorDashboardPage() {
       if (resRequests.ok) {
         const dataR = await resRequests.json();
         setCategoryRequests(dataR.data || []);
+      }
+      if (resReturns.ok) {
+        const dataRet = await resReturns.json();
+        setReturnRequests(dataRet.data || []);
       }
 
       setSubOrders(dbSubOrders);
@@ -102,74 +110,18 @@ export default function VendorDashboardPage() {
     try {
       setFulfillingId(subOrderId);
 
-      // 1. Send update to API
-      try {
-        await fetch('/api/vendor/orders', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subOrderId,
-            status,
-            trackingNumber,
-            shippingCarrier,
-            note,
-          }),
-        });
-      } catch (err) {
-        console.warn('Backend API update failed, continuing with local sync:', err);
-      }
-
-      // 2. Sync update to localStorage['shopora_orders']
-      if (typeof window !== 'undefined') {
-        const stored = localStorage.getItem('shopora_orders');
-        if (stored) {
-          try {
-            const parsedOrders: Order[] = JSON.parse(stored);
-            const statusLabels: Record<string, string> = {
-              PENDING: 'Order Placed',
-              CONFIRMED: 'Order Confirmed',
-              PACKED: 'Package Packed',
-              SHIPPED: 'Package Shipped',
-              OUT_FOR_DELIVERY: 'Out for Delivery',
-              DELIVERED: 'Delivered to Customer',
-              CANCELLED: 'Cancelled',
-            };
-
-            const updatedOrders = parsedOrders.map((order) => {
-              const updatedSubOrders = order.subOrders.map((sub) => {
-                if (sub.id === subOrderId) {
-                  const existingHistory = sub.statusHistory || [];
-                  const newEvent = {
-                    status,
-                    label: statusLabels[status] || status,
-                    timestamp: new Date().toISOString(),
-                    note: note || `Sub-order status updated to ${statusLabels[status] || status} by merchant vendor.`,
-                    completed: true,
-                  };
-
-                  return {
-                    ...sub,
-                    status: status as any,
-                    trackingNumber: trackingNumber || sub.trackingNumber,
-                    shippingCarrier: shippingCarrier || sub.shippingCarrier,
-                    statusHistory: [...existingHistory.filter((h) => h.status !== status), newEvent],
-                  };
-                }
-                return sub;
-              });
-
-              return {
-                ...order,
-                subOrders: updatedSubOrders,
-              };
-            });
-
-            localStorage.setItem('shopora_orders', JSON.stringify(updatedOrders));
-          } catch (e) {
-            console.error('Error updating localStorage orders:', e);
-          }
-        }
-      }
+      // Send update to API
+      await fetch('/api/vendor/orders', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subOrderId,
+          status,
+          trackingNumber,
+          shippingCarrier,
+          note,
+        }),
+      });
 
       await fetchVendorData();
     } catch (err) {
@@ -319,34 +271,50 @@ export default function VendorDashboardPage() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="border-b border-slate-200 flex items-center gap-4 overflow-x-auto">
+        <div className="border-b border-slate-200 flex items-center gap-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab('products')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'products'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <Package className="w-4 h-4" />
-            Published Catalog ({products.length})
+            Products ({products.length})
           </button>
           <button
             onClick={() => setActiveTab('orders')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'orders'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <Truck className="w-4 h-4" />
-            Sub-Orders Fulfillment ({subOrders.length})
+            Orders ({subOrders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('returns')}
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'returns'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 text-purple-600" />
+            Returns ({returnRequests.length})
+            {returnRequests.filter(r => r.status === 'RETURN_REQUESTED').length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-600 text-white">
+                {returnRequests.filter(r => r.status === 'RETURN_REQUESTED').length}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('category-requests')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'category-requests'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
@@ -355,36 +323,36 @@ export default function VendorDashboardPage() {
           </button>
           <button
             onClick={() => setActiveTab('reviews')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'reviews'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <MessageSquare className="w-4 h-4 text-amber-500 fill-amber-500/20" />
-            Reviews & Comments Analytics
+            Reviews
           </button>
           <button
             onClick={() => setActiveTab('sales')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'sales'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <BarChart3 className="w-4 h-4 text-emerald-500" />
-            Sales & Orders Analytics
+            Sales
           </button>
           <button
             onClick={() => setActiveTab('offers')}
-            className={`pb-3 text-sm font-extrabold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            className={`pb-3 px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'offers'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-indigo-600 text-indigo-600 font-bold'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <Tag className="w-4 h-4 text-indigo-600" />
-            Offers & Discounts
+            Discounts
           </button>
         </div>
 
@@ -405,6 +373,39 @@ export default function VendorDashboardPage() {
             onUpdateStatus={handleUpdateStatus}
             updatingId={fulfillingId}
           />
+        )}
+
+        {activeTab === 'returns' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-purple-600" />
+                Customer Return & Refund Requests ({returnRequests.length})
+              </h3>
+            </div>
+
+            {loadingData ? (
+              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-indigo-600" />
+              </div>
+            ) : returnRequests.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 space-y-2">
+                <RotateCcw className="w-10 h-10 text-slate-300 mx-auto" />
+                <p className="text-sm font-bold text-slate-700">No Return Requests</p>
+                <p className="text-xs text-slate-500 font-medium">There are currently no return requests submitted for your store's products.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {returnRequests.map((rr) => (
+                  <VendorReturnCard
+                    key={rr.id}
+                    returnRequest={rr}
+                    onRefresh={fetchVendorData}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === 'category-requests' && (

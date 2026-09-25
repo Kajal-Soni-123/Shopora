@@ -13,10 +13,33 @@ import { useRouter } from 'next/navigation';
 import { ShoporaLogo } from '@/components/common/ShoporaLogo';
 import { useAuth } from '@/context/AuthContext';
 import { ProductCardSkeleton } from '@/components/common/Skeleton';
+import GroupShoppingBanner from '@/components/GroupShoppingBanner';
+import GroupShoppingModal from '@/components/GroupShoppingModal';
+import { SuggestToGroupModal } from '@/components/SuggestToGroupModal';
+import { useGroupShopping } from '@/context/GroupShoppingContext';
 
 export default function HomePage() {
   const router = useRouter();
   const { requireAuth } = useAuth();
+  const {
+    activeSession,
+    isGroupModalOpen,
+    setIsGroupModalOpen,
+    addItemToGroup,
+    suggestProduct,
+    setIsChatDrawerOpen,
+  } = useGroupShopping();
+
+  const handleSuggestToGroup = async (product: Product) => {
+    if (!activeSession) {
+      setIsGroupModalOpen(true);
+      return;
+    }
+    const success = await suggestProduct(product.id);
+    if (success) {
+      setIsChatDrawerOpen(true);
+    }
+  };
 
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
@@ -27,8 +50,20 @@ export default function HomePage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [directBuyItem, setDirectBuyItem] = useState<CartItem | null>(null);
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const [suggestTargetProduct, setSuggestTargetProduct] = useState<Product | null>(null);
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
+
+  const handleDirectBuy = (product: Product) => {
+    requireAuth(() => {
+      setDirectBuyItem({
+        product,
+        quantity: 1,
+      });
+      setIsCheckoutOpen(true);
+    });
+  };
 
   // Sync category and search query from URL search params if present
   useEffect(() => {
@@ -41,8 +76,9 @@ export default function HomePage() {
       } else {
         setSelectedCategory('all');
       }
-      if (q !== null) {
-        setSearchQuery(q);
+      const groupCode = params.get('groupCode') || params.get('joinCode') || params.get('code');
+      if (groupCode) {
+        setIsGroupModalOpen(true);
       }
     }
   }, []);
@@ -113,6 +149,11 @@ export default function HomePage() {
 
   const handleAddToCart = (product: Product) => {
     requireAuth(() => {
+      // If an active group party is active, also add to group cart
+      if (activeSession) {
+        addItemToGroup(product.id, 1, product.attributes);
+      }
+
       setCartItems((prev) => {
         const existing = prev.find((item) => item.product.id === product.id);
         if (existing) {
@@ -167,21 +208,24 @@ export default function HomePage() {
 
   const handleOrderSuccess = (order: Order) => {
     setLatestOrder(order);
-    setCartItems([]);
     setIsCheckoutOpen(false);
 
-    // Clear cart in DB
-    fetch('/api/cart?clearAll=true', { method: 'DELETE' }).catch((e) =>
-      console.error('Error clearing DB cart after checkout:', e)
-    );
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('latest_shopora_order', JSON.stringify(order));
+    if (directBuyItem) {
+      setDirectBuyItem(null);
+    } else {
+      setCartItems([]);
+      // Clear cart in DB
+      fetch('/api/cart?clearAll=true', { method: 'DELETE' }).catch((e) =>
+        console.error('Error clearing DB cart after checkout:', e)
+      );
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+      {/* Group Shopping Active Session Top Banner */}
+      <GroupShoppingBanner />
+
       {/* Navigation Bar */}
       <Navbar
         cartItems={cartItems}
@@ -269,15 +313,15 @@ export default function HomePage() {
       )}
 
       {/* Product Catalog Grid */}
-      <main className="flex-1 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+      <main className="flex-1 max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 w-full">
         {isLoadingProducts ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8">
             {Array.from({ length: 8 }).map((_, idx) => (
               <ProductCardSkeleton key={idx} />
             ))}
           </div>
         ) : !Array.isArray(products) || products.length === 0 ? (
-          <div className="p-12 text-center bg-white border border-slate-200 rounded-3xl space-y-3 shadow-sm">
+          <div className="p-8 sm:p-12 text-center bg-white border border-slate-200 rounded-3xl space-y-3 shadow-sm">
             <p className="text-sm text-slate-500 font-semibold">No products found matching your search</p>
             <button
               onClick={() => {
@@ -290,13 +334,15 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8">
             {products.map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
                 onQuickView={setQuickViewProduct}
                 onAddToCart={handleAddToCart}
+                onSuggestToGroup={handleSuggestToGroup}
+                onBuyNow={handleDirectBuy}
               />
             ))}
           </div>
@@ -316,6 +362,14 @@ export default function HomePage() {
         product={quickViewProduct}
         onClose={() => setQuickViewProduct(null)}
         onAddToCart={handleAddToCart}
+        onSuggestToGroup={handleSuggestToGroup}
+        onBuyNow={handleDirectBuy}
+      />
+
+      <SuggestToGroupModal
+        isOpen={!!suggestTargetProduct}
+        onClose={() => setSuggestTargetProduct(null)}
+        product={suggestTargetProduct}
       />
 
       <CartDrawer
@@ -334,9 +388,18 @@ export default function HomePage() {
 
       <CheckoutModal
         isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        items={cartItems}
+        onClose={() => {
+          setIsCheckoutOpen(false);
+          setDirectBuyItem(null);
+        }}
+        items={directBuyItem ? [directBuyItem] : cartItems}
+        isDirectBuy={!!directBuyItem}
         onOrderSuccess={handleOrderSuccess}
+      />
+
+      <GroupShoppingModal
+        isOpen={isGroupModalOpen}
+        onClose={() => setIsGroupModalOpen(false)}
       />
     </div>
   );

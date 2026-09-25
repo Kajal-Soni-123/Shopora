@@ -1,58 +1,17 @@
 import { PrismaClient } from '@prisma/client';
-import path from 'path';
 
-const globalForPrisma = global as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 
-function getFreshPrismaClient(): PrismaClient {
-  try {
-    // Dynamic require using eval('require') bypasses Webpack module bundling cache
-    // and reads the latest generated Prisma Client directly from node_modules/.prisma/client
-    const nativeRequire = typeof eval !== 'undefined' ? eval('require') : require;
-    const clientPath = path.join(process.cwd(), 'node_modules', '.prisma', 'client');
-    
-    if (nativeRequire.cache && nativeRequire.resolve) {
-      try {
-        const resolved = nativeRequire.resolve(clientPath);
-        delete nativeRequire.cache[resolved];
-      } catch {
-        // Ignore resolution cache error if not cached yet
-      }
-    }
-    
-    const { PrismaClient: DynamicPrismaClient } = nativeRequire(clientPath);
-    return new DynamicPrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    });
-  } catch (e) {
-    console.warn('Fallback to standard PrismaClient instantiation:', e);
-    return new PrismaClient({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-    });
-  }
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }
 
 export function getPrisma(): PrismaClient {
-  let instance = globalForPrisma.prisma;
-  const userFields = (instance as any)?._dmmf?.modelMap?.User?.fields;
-  const hasPhoneField = userFields && Array.isArray(userFields) && userFields.some((f: any) => f.name === 'phone');
-
-  if (!instance || typeof (instance as any).categoryRequest === 'undefined' || !hasPhoneField) {
-    globalForPrisma.prisma = getFreshPrismaClient();
-    instance = globalForPrisma.prisma!;
-  }
-  return instance;
+  return prisma;
 }
-
-export const prisma = new Proxy({} as PrismaClient, {
-  get(_target, prop: string | symbol) {
-    const client = getPrisma();
-    let delegate = (client as any)[prop];
-    if (prop === 'categoryRequest' && typeof delegate === 'undefined') {
-      delegate = (client as any).category_requests || (client as any).CategoryRequest;
-    }
-    if (typeof delegate === 'function') {
-      return delegate.bind(client);
-    }
-    return delegate;
-  },
-});

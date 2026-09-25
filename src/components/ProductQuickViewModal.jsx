@@ -27,8 +27,8 @@ export default function ProductQuickViewModal({ product, onClose, onAddToCart, i
     }}>
       <div className="glass-panel" style={{
         width: '100%',
-        maxWidth: '720px',
-        padding: '28px',
+        maxWidth: '660px',
+        padding: '20px',
         position: 'relative',
         boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
         border: '1px solid rgba(255,255,255,0.1)'
@@ -37,16 +37,16 @@ export default function ProductQuickViewModal({ product, onClose, onAddToCart, i
         {/* Close Button */}
         <button
           onClick={onClose}
-          style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
+          style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
         >
-          <X size={22} />
+          <X size={20} />
         </button>
 
         {/* Modal Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: '20px' }}>
           
           {/* Image Gallery Preview */}
-          <div style={{ borderRadius: '14px', overflow: 'hidden', height: '320px', background: '#0F172A', position: 'relative' }}>
+          <div style={{ borderRadius: '14px', overflow: 'hidden', height: '240px', background: '#0F172A', position: 'relative' }}>
             <img src={product.image} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', top: '12px', left: '12px', background: 'rgba(16, 185, 129, 0.9)', color: 'white', fontSize: '0.75rem', fontWeight: '800', padding: '3px 8px', borderRadius: '6px' }}>
               IN STOCK

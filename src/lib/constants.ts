@@ -42,9 +42,9 @@ export type OrderStatusKey = keyof typeof ORDER_STATUS_CONFIG;
 
 export const PAYMENT_METHODS = [
   { id: 'CREDIT_CARD', name: 'Credit / Debit Card', icon: '💳' },
-  { id: 'APPLE_PAY', name: 'Apple Pay', icon: '🍎' },
-  { id: 'PAYPAL', name: 'PayPal', icon: '🅿️' },
-  { id: 'CO_SHOP_SPLIT', name: 'Co-Shop Shared Checkout', icon: '👥' },
+  { id: 'COD', name: 'Cash on Delivery', icon: '💵' },
+  { id: 'UPI', name: 'UPI / QR Code', icon: '📱' },
+  { id: 'NET_BANKING', name: 'Net Banking', icon: '🏦' },
 ] as const;
 
 export const DEFAULT_VENDOR_FALLBACK = {

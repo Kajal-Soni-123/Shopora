@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import {
   CreditCard,
   ShieldCheck,
@@ -18,6 +19,70 @@ import {
   Check,
   MapPin,
 } from 'lucide-react';
+
+function RealUpiQrCode({ amount }: { amount: number }) {
+  const [qrUrl, setQrUrl] = useState<string>('');
+
+  useEffect(() => {
+    const upiUri = `upi://pay?pa=shoporapay@icici&pn=Shopora%20Marketplace&am=${amount.toFixed(2)}&cu=INR&tn=Shopora%20Order`;
+    QRCode.toDataURL(upiUri, {
+      width: 320,
+      margin: 1,
+      color: {
+        dark: '#0F172A',
+        light: '#FFFFFF',
+      },
+    })
+      .then(setQrUrl)
+      .catch(console.error);
+  }, [amount]);
+
+  return (
+    <div className="flex flex-col items-center justify-center p-5 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-3">
+      {/* Official UPI Header */}
+      <div className="flex items-center justify-between w-full px-2 pb-2 border-b border-slate-100">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-black tracking-widest text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+            UPI
+          </span>
+          <span className="text-xs font-bold text-slate-700">BHIM UPI QR Payment</span>
+        </div>
+        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+          VERIFIED MERCHANT
+        </span>
+      </div>
+
+      {/* Real Generated QR Image */}
+      <div className="p-3 bg-white border-2 border-indigo-600/30 rounded-2xl shadow-inner flex items-center justify-center">
+        {qrUrl ? (
+          <img src={qrUrl} alt="Real UPI Payment QR Code" className="w-48 h-48 rounded-lg" />
+        ) : (
+          <div className="w-48 h-48 flex items-center justify-center text-xs text-slate-400 font-semibold">
+            Generating UPI QR Code...
+          </div>
+        )}
+      </div>
+
+      {/* Merchant Payment Details Card */}
+      <div className="w-full bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-0.5">
+        <p className="text-xs font-bold text-slate-900">Shopora Marketplace (ICICI Bank)</p>
+        <p className="text-[11px] text-slate-500 font-mono font-medium">VPA: shoporapay@icici</p>
+      </div>
+
+      {/* Accepted UPI App Logos / Pills */}
+      <div className="flex items-center justify-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-500 text-white shadow-xs">GPay</span>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-600 text-white shadow-xs">PhonePe</span>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-600 text-white shadow-xs">Paytm</span>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-600 text-white shadow-xs">BHIM UPI</span>
+      </div>
+
+      <p className="text-[11px] font-semibold text-slate-500 text-center">
+        Scan using GPay, PhonePe, Paytm, BHIM, or any UPI app to pay ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+      </p>
+    </div>
+  );
+}
 import { CartItem, Order, INITIAL_VENDORS } from '@/lib/data';
 import { formatCurrency, groupItemsByVendor, calculateOrderTotals } from '@/lib/utils';
 import { PAYMENT_METHODS } from '@/lib/constants';
@@ -41,6 +106,7 @@ interface CheckoutModalProps {
   onClose: () => void;
   items: CartItem[];
   onOrderSuccess: (order: Order) => void;
+  isDirectBuy?: boolean;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
@@ -48,6 +114,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   onClose,
   items,
   onOrderSuccess,
+  isDirectBuy = false,
 }) => {
   const { user } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
@@ -194,7 +261,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
       return;
     }
 
-    // Client-side validations for step 2
+    // If Cash on Delivery is selected, process order directly without online payment intent
+    if (formData.paymentMethod === 'COD') {
+      setIsSubmitting(true);
+      try {
+        const pincodeMatch = (formData.address || '').match(/\b\d{6}\b/);
+        const pincode = pincodeMatch ? pincodeMatch[0] : '400001';
+
+        const codCheckRes = await fetch(`/api/checkout/cod-availability?pincode=${pincode}&orderAmount=${subtotal}`);
+        const codCheckData = await codCheckRes.json();
+        const codResult = codCheckData.data || codCheckData;
+
+        if (!codCheckRes.ok || (codResult && !codResult.allowed)) {
+          showToast(codResult?.reason || 'Cash on Delivery is unavailable for this order.');
+          setIsSubmitting(false);
+          return;
+        }
+
+        await processOrderCreation(`cod_${Math.random().toString(36).substring(2, 10)}`, 'Cash on Delivery (Pay on Delivery)');
+      } catch (err) {
+        console.error('COD order creation error:', err);
+        setIsSubmitting(false);
+        showToast('Error processing Cash on Delivery order.');
+      }
+      return;
+    }
+
+    // Client-side validations for online payment methods
     if (formData.paymentMethod === 'CREDIT_CARD') {
       if (!validateCardNumber(cardDetails.number)) {
         showToast('Please enter a valid 16-digit credit card number.');
@@ -626,20 +719,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   </div>
 
                   {upiDetails.showQr ? (
-                    <div className="flex flex-col items-center justify-center p-4 bg-white rounded-xl border border-indigo-100 shadow-sm space-y-2">
-                      <div className="w-36 h-36 bg-slate-900 rounded-xl p-2.5 flex items-center justify-center text-white relative">
-                        {/* Simulated QR Code SVG */}
-                        <svg viewBox="0 0 100 100" className="w-full h-full fill-white">
-                          <path d="M0,0 h30 v30 h-30 z M10,10 h10 v10 h-10 z M70,0 h30 v30 h-30 z M80,10 h10 v10 h-10 z M0,70 h30 v30 h-30 z M10,80 h10 v10 h-10 z M40,0 h20 v10 h-20 z M40,20 h10 v20 h-10 z M60,40 h20 v20 h-20 z M20,40 h10 v20 h-10 z M70,70 h20 v20 h-20 z" />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="bg-indigo-600 text-[10px] font-black px-1.5 py-0.5 rounded text-white shadow">
-                            SHOPORA
-                          </span>
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-bold text-slate-600">Scan with GPay, PhonePe, Paytm, or BHIM</span>
-                    </div>
+                    <RealUpiQrCode amount={subtotal} />
                   ) : (
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">

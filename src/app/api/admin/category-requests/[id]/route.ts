@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getAuthUser } from '@/lib/auth';
 import { sendCategoryRequestStatusToVendor } from '@/lib/emailService';
+import { createNotification } from '@/lib/notificationService';
 import { ApiResponse } from '@/lib/api-response';
 
 function slugifyText(text: string): string {
@@ -114,6 +115,17 @@ export async function PATCH(
     } catch (emailErr) {
       console.error('Failed to send vendor email notification:', emailErr);
     }
+
+    // Dispatch in-app notification to Vendor
+    await createNotification({
+      email: categoryRequest.vendor.email,
+      title: status === 'APPROVED' ? 'Category Request Approved! 🎉' : 'Category Request Update 📂',
+      message: status === 'APPROVED'
+        ? `Your request for category "${categoryRequest.name}" has been approved by admin.`
+        : `Your request for category "${categoryRequest.name}" was rejected. Notes: ${adminNotes || 'No notes provided.'}`,
+      type: 'CATEGORY_REQUEST',
+      link: '/vendor/dashboard',
+    });
 
     const message = status === 'APPROVED'
       ? `Category request approved! Category "${categoryRequest.name}" has been created and vendor notified via email.`

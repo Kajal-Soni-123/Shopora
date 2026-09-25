@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { SidebarNav } from '@/components/SidebarNav';
@@ -33,7 +33,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ShoporaLogo } from '@/components/common/ShoporaLogo';
 import { CategoryFormModal, AdminCategory } from '@/components/admin/CategoryFormModal';
 import { DeleteCategoryModal } from '@/components/admin/DeleteCategoryModal';
@@ -76,12 +76,28 @@ export interface AdminCategoryRequest {
   createdAt: string;
 }
 
-export default function AdminDashboardPage() {
+function AdminDashboardContent() {
   const { user, loading: authLoading } = useAuth();
   const isAuthenticated = !!user;
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'category-requests'>('users');
+
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab');
+    if (
+      tabParam === 'category-requests' ||
+      tabParam === 'vendor-category-requests' ||
+      tabParam === 'category-request'
+    ) {
+      setActiveTab('category-requests');
+    } else if (tabParam === 'categories') {
+      setActiveTab('categories');
+    } else if (tabParam === 'users') {
+      setActiveTab('users');
+    }
+  }, [searchParams]);
   const [customers, setCustomers] = useState<AdminUser[]>([]);
   const [vendors, setVendors] = useState<AdminVendor[]>([]);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
@@ -513,7 +529,7 @@ export default function AdminDashboardPage() {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
                 {categories
                   .filter((cat) => !cat.parentId)
                   .map((cat) => {
@@ -956,5 +972,22 @@ export default function AdminDashboardPage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
+            <p className="text-xs font-semibold text-slate-500">Loading Super Admin Control Panel...</p>
+          </div>
+        </div>
+      }
+    >
+      <AdminDashboardContent />
+    </Suspense>
   );
 }
