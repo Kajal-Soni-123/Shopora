@@ -146,19 +146,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
 
   // Sync user profile data (including Primary Address) when user or modal opens
   React.useEffect(() => {
-    if (isOpen && user) {
-      const primaryAddr =
-        user.primaryAddressType === 'WORK'
-          ? user.workAddress || user.homeAddress || ''
-          : user.homeAddress || user.workAddress || '';
+    if (isOpen) {
+      setStep(1);
+      if (user) {
+        const primaryAddr =
+          user.primaryAddressType === 'WORK'
+            ? user.workAddress || user.homeAddress || ''
+            : user.homeAddress || user.workAddress || '';
 
-      setFormData((prev) => ({
-        ...prev,
-        name: user.name || prev.name,
-        email: user.email || prev.email,
-        phone: user.phone || prev.phone,
-        address: primaryAddr || prev.address,
-      }));
+        setFormData((prev) => ({
+          ...prev,
+          name: user.name || prev.name,
+          email: user.email || prev.email,
+          phone: user.phone || prev.phone,
+          address: primaryAddr || prev.address,
+        }));
+      }
     }
   }, [isOpen, user]);
 

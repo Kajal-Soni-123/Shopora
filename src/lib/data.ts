@@ -78,7 +78,7 @@ export interface Order {
     provider?: string;
   };
   totalAmount: number;
-  aggregateStatus: 'PROCESSING' | 'SHIPPED' | 'DELIVERED';
+  aggregateStatus: 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
   subOrders: SubOrder[];
   createdAt: string;
 }

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ShoppingCart, Warehouse, Sparkles, Check, Heart, ArrowRight, Zap } from 'lucide-react';
@@ -6,6 +6,7 @@ import { Product } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/common/Button';
 import { RatingStars } from '@/components/common/RatingStars';
+import { getColorStyle } from '@/lib/color-utils';
 import { useGroupShopping } from '@/context/GroupShoppingContext';
 import { useWishlist } from '@/context/WishlistContext';
 
@@ -24,6 +25,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   onSuggestToGroup,
   onBuyNow,
 }) => {
+  const [justAdded, setJustAdded] = useState(false);
   const router = useRouter();
   const { isInWishlist, toggleWishlist } = useWishlist();
   const {
@@ -174,6 +176,42 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
           <p className="text-xs text-slate-600 line-clamp-2 mt-1 font-medium leading-relaxed">
             {product.description}
           </p>
+
+          {/* Color Variant Preview Swatches */}
+          {(() => {
+            const colorAttribute = product.attributes
+              ? Object.entries(product.attributes).find(([k]) => k.toLowerCase().includes('color'))
+              : null;
+            const colorList: string[] = colorAttribute
+              ? Array.isArray(colorAttribute[1])
+                ? colorAttribute[1]
+                : [String(colorAttribute[1])]
+              : [];
+
+            if (colorList.length === 0) return null;
+
+            return (
+              <div className="flex items-center gap-1.5 pt-2">
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Colors:</span>
+                <div className="flex items-center gap-1">
+                  {colorList.slice(0, 5).map((colorName, i) => {
+                    const colorStyle = getColorStyle(colorName);
+                    return (
+                      <span
+                        key={i}
+                        title={colorName}
+                        className={`w-3.5 h-3.5 rounded-full border ${colorStyle.border} shadow-2xs transition-transform hover:scale-125 cursor-pointer`}
+                        style={{ background: colorStyle.background }}
+                      />
+                    );
+                  })}
+                  {colorList.length > 5 && (
+                    <span className="text-[9px] font-bold text-slate-400">+{colorList.length - 5}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Price & Add Action */}
@@ -203,6 +241,11 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                 <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                 In Cart
               </span>
+            ) : justAdded ? (
+              <span className="flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold bg-emerald-600 text-white flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-emerald-600/30 animate-in zoom-in-95 duration-150">
+                <Check className="w-4 h-4 text-white shrink-0" />
+                <span>Added!</span>
+              </span>
             ) : (
               <>
                 <Button
@@ -211,6 +254,8 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
                   onClick={(e) => {
                     e.stopPropagation();
                     if (onAddToCart) onAddToCart(product);
+                    setJustAdded(true);
+                    setTimeout(() => setJustAdded(false), 1800);
                   }}
                   leftIcon={<ShoppingCart className="w-4 h-4" />}
                   className="flex-1 font-bold rounded-xl px-3 py-2.5 text-xs justify-center whitespace-nowrap shadow-md shadow-indigo-600/20"
