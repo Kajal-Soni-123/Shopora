@@ -448,19 +448,41 @@ export default function ProductDetailPage() {
 
             {/* Gallery Thumbnails Carousel */}
             {allImages.length > 1 && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1 justify-center sm:justify-start shrink-0">
+              <div className="flex items-center gap-2.5 overflow-x-auto pb-1 justify-center sm:justify-start shrink-0 pt-1">
                 {allImages.map((imgUrl, idx) => (
                   <button
                     type="button"
                     key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`relative w-11 h-11 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer ${
+                    onClick={() => {
+                      setActiveImageIndex(idx);
+                      // Sync with color variant attribute if available
+                      if (product.attributes) {
+                        const colorEntry = Object.entries(product.attributes).find(([k]) =>
+                          k.toLowerCase().includes('color')
+                        );
+                        if (colorEntry) {
+                          const [attrKey, attrVal] = colorEntry;
+                          const options = Array.isArray(attrVal)
+                            ? attrVal
+                            : typeof attrVal === 'string'
+                            ? attrVal.split(',').map((s) => s.trim())
+                            : [];
+                          if (options[idx % options.length]) {
+                            setSelectedVariants((prev) => ({
+                              ...prev,
+                              [attrKey]: options[idx % options.length],
+                            }));
+                          }
+                        }
+                      }
+                    }}
+                    className={`relative w-13 h-16 sm:w-14 sm:h-18 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer bg-slate-50 shadow-2xs ${
                       activeImageIndex === idx
-                        ? 'border-indigo-600 ring-2 ring-indigo-600/20 scale-105'
-                        : 'border-slate-200 hover:border-slate-400 opacity-75 hover:opacity-100'
+                        ? 'border-indigo-600 ring-2 ring-indigo-600/30 scale-105 shadow-md z-10'
+                        : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
                     }`}
                   >
-                    <Image src={imgUrl} alt={`Thumbnail ${idx + 1}`} fill sizes="44px" className="object-contain p-1" />
+                    <Image src={imgUrl} alt={`Thumbnail ${idx + 1}`} fill sizes="64px" className="object-contain p-0.5" />
                   </button>
                 ))}
               </div>
@@ -527,7 +549,7 @@ export default function ProductDetailPage() {
                               {attrKey}: <span className="font-bold text-indigo-600 ml-1">{selectedVal}</span>
                             </label>
                             <div className="flex flex-wrap gap-1.5">
-                              {optionsArr.map((opt) => {
+                              {optionsArr.map((opt, optIdx) => {
                                 const isChosen = selectedVal === opt;
                                 const colorStyle = isColorKey ? getColorStyle(opt) : null;
 
@@ -538,24 +560,27 @@ export default function ProductDetailPage() {
                                       type="button"
                                       key={opt}
                                       title={opt}
-                                      onClick={() =>
+                                      onClick={() => {
                                         setSelectedVariants((prev) => ({
                                           ...prev,
                                           [attrKey]: opt,
-                                        }))
-                                      }
-                                      className={`relative w-7 h-7 rounded-full transition-all flex items-center justify-center border shadow-2xs cursor-pointer ${
+                                        }));
+                                        if (allImages[optIdx]) {
+                                          setActiveImageIndex(optIdx % allImages.length);
+                                        }
+                                      }}
+                                      className={`relative w-8 h-8 rounded-full transition-all flex items-center justify-center border shadow-2xs cursor-pointer ${
                                         colorStyle.border
                                       } ${
                                         isChosen
-                                          ? 'ring-2 ring-indigo-600 ring-offset-1 scale-105'
+                                          ? 'ring-2 ring-indigo-600 ring-offset-2 scale-110 shadow-md z-10'
                                           : 'hover:scale-105 opacity-85 hover:opacity-100'
                                       }`}
                                       style={{ background: colorStyle.background }}
                                     >
                                       {isChosen && (
                                         <Check
-                                          className={`w-3.5 h-3.5 stroke-[3] ${
+                                          className={`w-4 h-4 stroke-[3] ${
                                             isWhite ? 'text-slate-900' : 'text-white'
                                           }`}
                                         />

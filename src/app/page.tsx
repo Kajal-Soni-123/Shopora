@@ -65,22 +65,38 @@ export default function HomePage() {
     });
   };
 
-  // Sync category and search query from URL search params if present
+  // Sync category and search query from URL search params or shopora_search_sync event
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const cat = params.get('category');
-      const q = params.get('query');
-      if (cat) {
-        setSelectedCategory(cat);
-      } else {
-        setSelectedCategory('all');
+    const handleUrlSync = (e?: Event) => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const cat = params.get('category');
+        const customDetailQuery = (e as CustomEvent)?.detail?.query;
+        const q = customDetailQuery !== undefined ? customDetailQuery : params.get('query');
+
+        if (cat) {
+          setSelectedCategory(cat);
+        } else {
+          setSelectedCategory('all');
+        }
+        if (q !== null && q !== undefined) {
+          setSearchQuery(q);
+        }
+        const groupCode = params.get('groupCode') || params.get('joinCode') || params.get('code');
+        if (groupCode) {
+          setIsGroupModalOpen(true);
+        }
       }
-      const groupCode = params.get('groupCode') || params.get('joinCode') || params.get('code');
-      if (groupCode) {
-        setIsGroupModalOpen(true);
-      }
-    }
+    };
+
+    handleUrlSync();
+
+    window.addEventListener('popstate', handleUrlSync);
+    window.addEventListener('shopora_search_sync', handleUrlSync);
+    return () => {
+      window.removeEventListener('popstate', handleUrlSync);
+      window.removeEventListener('shopora_search_sync', handleUrlSync);
+    };
   }, []);
 
   // Fetch dynamic categories

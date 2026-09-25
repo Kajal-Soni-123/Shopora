@@ -46,18 +46,9 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
     (p) => p.hoveredProductId === product.id && p.memberId !== activeMember?.id
   );
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!activeSession || !activeMember || !cardRef.current) return;
-
-    const now = Date.now();
-    if (now - lastUpdateRef.current < 80) return;
-    lastUpdateRef.current = now;
-
-    const rect = cardRef.current.getBoundingClientRect();
-    const cursorX = Math.min(100, Math.max(0, Math.round(((e.clientX - rect.left) / rect.width) * 100)));
-    const cursorY = Math.min(100, Math.max(0, Math.round(((e.clientY - rect.top) / rect.height) * 100)));
-
-    updateMyPresence(product.id, cursorX, cursorY, true);
+  const handleMouseEnter = () => {
+    if (!activeSession || !activeMember) return;
+    updateMyPresence(product.id, 50, 50, true);
   };
 
   const handleMouseLeave = () => {
@@ -72,7 +63,7 @@ export const ProductCard: React.FC<ProductCardProps> = React.memo(({
   return (
     <div
       ref={cardRef}
-      onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleCardClick}
       className="group relative bg-white border border-slate-200/70 rounded-2xl hover:border-indigo-300 transition-all duration-300 flex flex-col justify-between hover:shadow-md cursor-pointer"

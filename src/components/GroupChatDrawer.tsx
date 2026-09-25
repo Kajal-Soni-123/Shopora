@@ -21,6 +21,8 @@ export function GroupChatDrawer() {
     toggleReaction,
     fetchSuggestedUsers,
     sendInviteEmails,
+    askGenie,
+    isGenieThinking,
   } = useGroupShopping();
 
   const [activeTab, setActiveTab] = useState<'CHAT' | 'MEMBERS'>('CHAT');
@@ -101,6 +103,17 @@ export function GroupChatDrawer() {
     }
   };
 
+  // Automatic intent detection for natural shopping queries
+  const isShoppingQuery = (text: string) => {
+    const lower = text.toLowerCase().trim();
+    return (
+      lower.startsWith('@genie') ||
+      lower.startsWith('genie') ||
+      /^(recommend|suggest|find|show me|looking for|search|cheapest|best rated|deals under|items under|\$)/i.test(lower) ||
+      /\b(under \$|less than \$|below \$|which one should|what is the best)\b/i.test(lower)
+    );
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -108,12 +121,105 @@ export function GroupChatDrawer() {
     const replyId = replyTargetMessage?.id;
     setIsSending(true);
     setReplyTargetMessage(null); // Clear preview immediately
-    const success = await sendMessage(inputText, replyId);
+
+    const trimmed = inputText.trim();
+    let success = false;
+
+    // Smart Auto-Routing: If query matches shopping intent or starts with @genie, route to Genie AI!
+    if (isShoppingQuery(trimmed)) {
+      const result = await askGenie(trimmed);
+      success = result.success;
+    } else {
+      success = await sendMessage(trimmed, replyId);
+    }
+
     setIsSending(false);
 
     if (success) {
       setInputText('');
     }
+  };
+
+  const triggerMainPageSearch = (rawPrompt: string) => {
+    if (typeof window === 'undefined') return;
+    let cleanedQuery = rawPrompt
+      .replace(/^suggest\s+/i, '')
+      .replace(/gifts?|products?|items?/gi, '')
+      .trim();
+
+    // Map common category pill queries to clean catalog search terms
+    if (/skincare/i.test(cleanedQuery)) cleanedQuery = 'skincare';
+    else if (/clothes|fashion|wear|apparel/i.test(cleanedQuery)) cleanedQuery = 'clothes';
+    else if (/jewelry|accessory|accessories/i.test(cleanedQuery)) cleanedQuery = 'jewelry';
+    else if (/appliance|tech|gadget/i.test(cleanedQuery)) cleanedQuery = 'appliances';
+
+    if (cleanedQuery) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('query', cleanedQuery);
+      window.history.pushState({}, '', url.toString());
+      window.dispatchEvent(new CustomEvent('shopora_search_sync', { detail: { query: cleanedQuery } }));
+    }
+  };
+
+  const handleAskGenieDirect = async () => {
+    if (!inputText.trim()) return;
+    setIsSending(true);
+    setReplyTargetMessage(null);
+    // Note: Do not trigger main page search on raw typed text prompt to prevent clearing catalog grid
+    const result = await askGenie(inputText.trim());
+    setIsSending(false);
+    if (result.success) {
+      setInputText('');
+    }
+  };
+
+  const handleQuickGenie = async (prompt: string) => {
+    setIsSending(true);
+    // Trigger main page search grid update ONLY when clicking category pillbox
+    triggerMainPageSearch(prompt);
+    await askGenie(prompt);
+    setIsSending(false);
+  };
+
+  // Interactive Category Option Pillbox Renderer for Chat Bubbles
+  const renderMessageContentWithPills = (content: string) => {
+    const pillRegex = /\[\s*([^\]]+?)\s*\]/g;
+    const pills: { rawLabel: string; query: string }[] = [];
+    let match;
+
+    while ((match = pillRegex.exec(content)) !== null) {
+      const rawLabel = match[1];
+      const categoryQuery = rawLabel.replace(/[^\w\s&]/gi, '').trim();
+      pills.push({ rawLabel, query: categoryQuery });
+    }
+
+    const cleanText = content.replace(/\[\s*[^\]]+?\s*\]/g, '').trim();
+
+    if (pills.length === 0) {
+      return <p className="whitespace-pre-wrap break-words leading-relaxed">{content}</p>;
+    }
+
+    return (
+      <div className="space-y-2.5 my-1 font-sans">
+        <p className="whitespace-pre-wrap break-words leading-relaxed font-medium text-xs">{cleanText}</p>
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-indigo-100/80">
+          {pills.map((pill, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleQuickGenie(`suggest ${pill.query} gifts`);
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold bg-white hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 hover:border-indigo-600 shadow-2xs hover:shadow-md transition-all cursor-pointer text-center active:scale-95"
+              title={`View ${pill.query} gift suggestions`}
+            >
+              <span className="truncate">{pill.rawLabel}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   // Mobile / Touch long-press handlers
@@ -342,9 +448,9 @@ export function GroupChatDrawer() {
                           )}
 
                           {/* Message Content */}
-                          <p className="whitespace-pre-wrap break-words pr-4 leading-relaxed font-normal">
-                            {msg.content}
-                          </p>
+                          <div className="whitespace-pre-wrap break-words pr-4 leading-relaxed font-normal text-xs">
+                            {renderMessageContentWithPills(msg.content)}
+                          </div>
 
                           {/* Timestamp */}
                           <div
@@ -476,11 +582,29 @@ export function GroupChatDrawer() {
                     );
                   })
                 )}
+
+                {/* Shopora Genie AI Searching/Thinking Indicator */}
+                {isGenieThinking && (
+                  <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white shadow-md animate-pulse my-2">
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-base font-bold">
+                      🧞‍♂️
+                    </div>
+                    <div className="text-xs min-w-0">
+                      <p className="font-bold flex items-center gap-1">
+                        <span>Shopora Genie is searching...</span>
+                        <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">AI</span>
+                      </p>
+                      <p className="text-[10px] text-indigo-200 truncate">Finding the best matches & catalog deals for your party ✨</p>
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
 
               {/* Message Input Footer with WhatsApp Reply Preview Banner */}
               <form onSubmit={handleSend} className="p-2.5 bg-white border-t border-slate-100 space-y-2">
+
                 {/* WhatsApp Reply Preview Banner directly above input */}
                 {replyTargetMessage && (
                   <div className="flex items-center justify-between bg-slate-100 p-2.5 rounded-xl border-l-4 border-indigo-600 animate-slide-up">
@@ -507,7 +631,7 @@ export function GroupChatDrawer() {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <input
                     ref={inputRef}
                     type="text"
@@ -516,14 +640,28 @@ export function GroupChatDrawer() {
                     placeholder={
                       replyTargetMessage
                         ? `Reply to ${replyTargetMessage.sender.user?.name || replyTargetMessage.sender.guestName}...`
-                        : 'Type a message...'
+                        : 'Ask Genie e.g. "shoes under $50" or chat...'
                     }
-                    className="flex-1 text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 placeholder-slate-400"
+                    className="flex-1 text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 placeholder-slate-400 min-w-0"
                   />
+
+                  {/* Dedicated Ask Genie AI Button */}
+                  <button
+                    type="button"
+                    onClick={handleAskGenieDirect}
+                    disabled={isSending || isGenieThinking || !inputText.trim()}
+                    title="Ask Shopora Genie AI for product recommendations"
+                    className="py-2.5 px-3 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:opacity-95 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all disabled:opacity-40 flex items-center gap-1 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span>✨ Ask Genie</span>
+                  </button>
+
+                  {/* Regular Chat Send Button */}
                   <button
                     type="submit"
                     disabled={isSending || !inputText.trim()}
-                    className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-40 transition-all flex-shrink-0 cursor-pointer"
+                    title="Send chat message"
+                    className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl disabled:opacity-40 transition-all flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

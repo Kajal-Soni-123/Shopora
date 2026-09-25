@@ -142,6 +142,8 @@ interface GroupShoppingContextType {
   sendMessage: (content: string, replyToId?: string) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<boolean>;
   suggestProduct: (productId: string, comment?: string) => Promise<{ success: boolean; error?: string }>;
+  isGenieThinking: boolean;
+  askGenie: (prompt: string) => Promise<{ success: boolean; error?: string }>;
   toggleReaction: (messageId: string, reaction: string) => Promise<boolean>;
   toggleVote: (messageId: string, vote: string) => Promise<boolean>;
 }
@@ -158,6 +160,8 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
   const [messages, setMessages] = useState<GroupChatMessage[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [memberPresences, setMemberPresences] = useState<MemberPresence[]>([]);
+  const [isGenieThinking, setIsGenieThinking] = useState(false);
+  const lastPresenceSendRef = React.useRef<number>(0);
 
   const isHost = activeSession && activeMember ? activeMember.role === 'HOST' : false;
 
@@ -167,7 +171,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     return activeSession.items.some((item) => item.productId === productId || item.product?.id === productId);
   };
 
-  // Update current user presence hover state
+  // Update current user presence hover state (throttled to at most once every 1.5s)
   const updateMyPresence = async (
     hoveredProductId: string | null,
     cursorX = 50,
@@ -175,6 +179,10 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     isHovering = true
   ) => {
     if (!activeSession?.code || !activeMember) return;
+    const now = Date.now();
+    if (now - lastPresenceSendRef.current < 1500 && hoveredProductId !== null) return;
+    lastPresenceSendRef.current = now;
+
     try {
       const res = await fetch(`/api/group-shopping/${activeSession.code}/presence`, {
         method: 'POST',
@@ -218,7 +226,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     };
 
     fetchPresences();
-    const interval = setInterval(fetchPresences, 600);
+    const interval = setInterval(fetchPresences, 3500);
     return () => clearInterval(interval);
   }, [activeSession?.code]);
 
@@ -279,7 +287,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  // Periodic polling for real-time item, member, and message updates (every 3s when session is active)
+  // Periodic polling for real-time item, member, and message updates (every 4s when session is active)
   useEffect(() => {
     if (!activeSession?.code) return;
 
@@ -288,10 +296,10 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     const interval = setInterval(() => {
       fetchSessionDetails(activeSession.code);
       fetchMessages(activeSession.code);
-    }, 3000);
+    }, 4000);
 
     return () => clearInterval(interval);
-  }, [activeSession?.code, isChatDrawerOpen]);
+  }, [activeSession?.code]);
 
   const resetUnreadCount = () => {
     setUnreadCount(0);
@@ -770,6 +778,47 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     }
   };
 
+  const askGenie = async (prompt: string): Promise<{ success: boolean; error?: string }> => {
+    let sessionCode = activeSession?.code || (typeof window !== 'undefined' ? localStorage.getItem('shopora_group_code') : null);
+
+    if (!sessionCode || !prompt.trim()) {
+      return { success: false, error: 'Please start or join a group shopping session first.' };
+    }
+
+    setIsGenieThinking(true);
+    try {
+      let res = await fetch(`/api/group-shopping/${sessionCode}/genie`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      let json = await res.json();
+
+      // If session was stale or returned 404, auto-recover session details and retry
+      if (!json.success && (json.error?.includes('Active group session') || res.status === 404)) {
+        await fetchSessionDetails(sessionCode);
+        const refreshedCode = (typeof window !== 'undefined' ? localStorage.getItem('shopora_group_code') : null) || sessionCode;
+        res = await fetch(`/api/group-shopping/${refreshedCode}/genie`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        });
+        json = await res.json();
+      }
+
+      if (json.success) {
+        await fetchMessages(sessionCode);
+        return { success: true };
+      }
+      return { success: false, error: json.error || 'Shopora Genie could not process request.' };
+    } catch (err: any) {
+      console.error('Error asking Genie:', err);
+      return { success: false, error: err?.message || 'Failed to contact Shopora Genie.' };
+    } finally {
+      setIsGenieThinking(false);
+    }
+  };
+
   return (
     <GroupShoppingContext.Provider
       value={{
@@ -802,6 +851,8 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         sendMessage,
         deleteMessage,
         suggestProduct,
+        isGenieThinking,
+        askGenie,
         toggleReaction,
         toggleVote,
       }}

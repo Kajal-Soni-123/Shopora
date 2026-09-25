@@ -199,19 +199,40 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
 
               {/* Gallery Thumbnails List */}
               {allImages.length > 1 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 shrink-0 pt-1">
                   {allImages.map((imgUrl, idx) => (
                     <button
                       type="button"
                       key={idx}
-                      onClick={() => setActiveImageIndex(idx)}
-                      className={`relative w-11 h-11 rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 ${
+                      onClick={() => {
+                        setActiveImageIndex(idx);
+                        if (product.attributes) {
+                          const colorEntry = Object.entries(product.attributes).find(([k]) =>
+                            k.toLowerCase().includes('color')
+                          );
+                          if (colorEntry) {
+                            const [attrKey, attrVal] = colorEntry;
+                            const options = Array.isArray(attrVal)
+                              ? attrVal
+                              : typeof attrVal === 'string'
+                              ? attrVal.split(',').map((s) => s.trim())
+                              : [];
+                            if (options[idx % options.length]) {
+                              setSelectedVariants((prev) => ({
+                                ...prev,
+                                [attrKey]: options[idx % options.length],
+                              }));
+                            }
+                          }
+                        }
+                      }}
+                      className={`relative w-12 h-15 rounded-xl overflow-hidden border-2 transition-all flex-shrink-0 cursor-pointer bg-slate-50 shadow-2xs ${
                         activeImageIndex === idx
-                          ? 'border-indigo-600 ring-2 ring-indigo-600/20 scale-105'
-                          : 'border-slate-200 hover:border-slate-400 opacity-70 hover:opacity-100'
+                          ? 'border-indigo-600 ring-2 ring-indigo-600/30 scale-105 shadow-sm z-10'
+                          : 'border-slate-200 hover:border-slate-400 opacity-80 hover:opacity-100'
                       }`}
                     >
-                      <Image src={imgUrl} alt={`Thumbnail ${idx + 1}`} fill sizes="44px" className="object-cover" />
+                      <Image src={imgUrl} alt={`Thumbnail ${idx + 1}`} fill sizes="48px" className="object-contain p-0.5" />
                     </button>
                   ))}
                 </div>
@@ -259,7 +280,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                                 {attrKey}: <span className="font-semibold text-indigo-600 ml-1">{selectedVal}</span>
                               </label>
                               <div className="flex flex-wrap gap-1.5">
-                                {optionsArr.map((opt) => {
+                                {optionsArr.map((opt, optIdx) => {
                                   const isChosen = selectedVal === opt;
                                   const colorStyle = isColorKey ? getColorStyle(opt) : null;
 
@@ -270,24 +291,27 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                                         type="button"
                                         key={opt}
                                         title={opt}
-                                        onClick={() =>
+                                        onClick={() => {
                                           setSelectedVariants((prev) => ({
                                             ...prev,
                                             [attrKey]: opt,
-                                          }))
-                                        }
-                                        className={`relative w-6 h-6 rounded-full transition-all flex items-center justify-center border shadow-xs ${
+                                          }));
+                                          if (allImages[optIdx]) {
+                                            setActiveImageIndex(optIdx % allImages.length);
+                                          }
+                                        }}
+                                        className={`relative w-7 h-7 rounded-full transition-all flex items-center justify-center border shadow-xs cursor-pointer ${
                                           colorStyle.border
                                         } ${
                                           isChosen
-                                            ? 'ring-2 ring-indigo-600 ring-offset-1 scale-105'
+                                            ? 'ring-2 ring-indigo-600 ring-offset-1 scale-110 shadow-md z-10'
                                             : 'hover:scale-105 opacity-85 hover:opacity-100'
                                         }`}
                                         style={{ background: colorStyle.background }}
                                       >
                                         {isChosen && (
                                           <Check
-                                            className={`w-3 h-3 stroke-[3] ${
+                                            className={`w-3.5 h-3.5 stroke-[3] ${
                                               isWhite ? 'text-slate-900' : 'text-white'
                                             }`}
                                           />
