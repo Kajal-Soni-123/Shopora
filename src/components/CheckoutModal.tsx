@@ -90,6 +90,7 @@ import { Flyout } from '@/components/common/Flyout';
 import { Button } from '@/components/common/Button';
 import { Badge } from '@/components/common/Badge';
 import { useAuth } from '@/context/AuthContext';
+import { PhoneInput } from '@/components/common/PhoneInput';
 import { AddressMapModal } from '@/components/AddressMapModal';
 import {
   detectCardBrand,
@@ -484,17 +485,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Phone Number (SMS / WhatsApp Tracking Alerts)</span>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Phone Number (SMS / WhatsApp Tracking Alerts)
+                  </label>
                   <span className="text-[10px] text-indigo-600 font-extrabold uppercase">Twilio Enabled</span>
-                </label>
-                <input
-                  type="tel"
+                </div>
+                <PhoneInput
                   required
-                  placeholder="+1 555-019-2834"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full bg-slate-50 text-sm text-slate-900 px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors font-medium"
+                  onChange={(val) => setFormData((prev) => ({ ...prev, phone: val }))}
                 />
               </div>
 

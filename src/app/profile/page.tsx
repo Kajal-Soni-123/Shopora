@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Navbar } from '@/components/Navbar';
 import { SidebarNav } from '@/components/SidebarNav';
 import { CartDrawer } from '@/components/CartDrawer';
+import { PhoneInput } from '@/components/common/PhoneInput';
 import {
   User as UserIcon,
   Mail,
@@ -334,29 +335,15 @@ export default function ProfilePage() {
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                       Phone Number
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                        <Phone className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="tel"
-                        disabled={!isEditing}
-                        placeholder="+1 (555) 000-0000"
-                        value={phone}
-                        onChange={(e) => {
-                          setPhone(e.target.value);
-                          if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: undefined });
-                        }}
-                        className={`w-full pl-10 bg-slate-50 disabled:bg-slate-100/80 text-sm text-slate-900 px-4 py-2.5 rounded-xl border ${
-                          fieldErrors.phone ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20' : 'border-slate-200 focus:border-indigo-500'
-                        } outline-none focus:bg-white transition-all font-medium`}
-                      />
-                    </div>
-                    {fieldErrors.phone && (
-                      <p className="text-[11px] font-semibold text-rose-500 mt-1 animate-in fade-in">
-                        {fieldErrors.phone}
-                      </p>
-                    )}
+                    <PhoneInput
+                      disabled={!isEditing}
+                      value={phone}
+                      onChange={(val) => {
+                        setPhone(val);
+                        if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: undefined });
+                      }}
+                      error={fieldErrors.phone}
+                    />
                   </div>
                 </div>
 
