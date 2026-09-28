@@ -130,7 +130,7 @@ interface GroupShoppingContextType {
   isItemInGroupCart: (productId: string) => boolean;
   createSession: (title: string, checkoutMode?: 'HOST_PAY' | 'SPLIT_PAY', guestHostName?: string) => Promise<{ success: boolean; error?: string }>;
   joinSession: (code: string, guestName?: string, guestEmail?: string) => Promise<{ success: boolean; error?: string }>;
-  fetchSessionDetails: (code: string) => Promise<void>;
+  fetchSessionDetails: (code: string) => Promise<GroupSession | null>;
   fetchSuggestedUsers: (code?: string, query?: string) => Promise<{ success: boolean; suggestions: Array<{ id: string; name: string; email: string; avatar?: string | null; role: string; locationLabel?: string | null; isNearby?: boolean }>; error?: string }>;
   addItemToGroup: (productId: string, quantity?: number, attributes?: any) => Promise<boolean>;
   updateItemQuantity: (itemId: string, quantity: number) => Promise<boolean>;
@@ -233,15 +233,65 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
   // Sync active code from localStorage, URL parameter, or backend user session lookup
   useEffect(() => {
     const syncActiveSession = async () => {
-      const savedCode = localStorage.getItem('shopora_group_code');
+      const savedCode = typeof window !== 'undefined' ? localStorage.getItem('shopora_group_code') : null;
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
       const urlCode = urlParams ? urlParams.get('groupCode') || urlParams.get('joinCode') || urlParams.get('code') : null;
 
+      // If user is logged out and no explicit URL join parameter exists, clear any saved session
+      if (!user && !urlCode) {
+        if (savedCode) {
+          localStorage.removeItem('shopora_group_code');
+          localStorage.removeItem(`shopora_group_member_${savedCode}`);
+        }
+        setActiveSession(null);
+        setActiveMember(null);
+        setMessages([]);
+        setUnreadCount(0);
+        return;
+      }
+
       const codeToFetch = urlCode || savedCode;
       if (codeToFetch) {
-        await fetchSessionDetails(codeToFetch);
+        const sessionData = await fetchSessionDetails(codeToFetch);
         if (urlCode) {
           setIsGroupModalOpen(true);
+        } else if (user && sessionData) {
+          // Verify logged-in user is host or member of this session
+          const isMemberOrHost =
+            sessionData.hostUserId === user.id ||
+            sessionData.members?.some(
+              (m: GroupMember) =>
+                m.userId === user.id ||
+                (m.user?.id && m.user.id === user.id) ||
+                (m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase()) ||
+                (m.user?.email && m.user.email.toLowerCase() === user.email.toLowerCase())
+            );
+
+          if (!isMemberOrHost) {
+            // Party session in savedCode belonged to a previous user! Clear it.
+            localStorage.removeItem('shopora_group_code');
+            localStorage.removeItem(`shopora_group_member_${codeToFetch}`);
+            setActiveSession(null);
+            setActiveMember(null);
+            setMessages([]);
+
+            // Auto-recover active session for current user from DB if available
+            try {
+              const res = await fetch('/api/group-shopping/user-active-session');
+              const json = await res.json();
+              if (json.success && json.session) {
+                setActiveSession(json.session);
+                if (json.member) {
+                  setActiveMember(json.member);
+                  localStorage.setItem(`shopora_group_member_${json.session.code}`, json.member.id);
+                }
+                localStorage.setItem('shopora_group_code', json.session.code);
+                fetchMessages(json.session.code);
+              }
+            } catch (err) {
+              console.error('Error recovering user active session:', err);
+            }
+          }
         }
         return;
       }
@@ -259,10 +309,18 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
             }
             localStorage.setItem('shopora_group_code', json.session.code);
             fetchMessages(json.session.code);
+          } else {
+            setActiveSession(null);
+            setActiveMember(null);
+            setMessages([]);
           }
         } catch (err) {
           console.error('Error auto-recovering user active session:', err);
         }
+      } else {
+        setActiveSession(null);
+        setActiveMember(null);
+        setMessages([]);
       }
     };
 
@@ -305,7 +363,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     setUnreadCount(0);
   };
 
-  const fetchSessionDetails = async (code: string) => {
+  const fetchSessionDetails = async (code: string): Promise<GroupSession | null> => {
     try {
       const res = await fetch(`/api/group-shopping/${code}`);
       const json = await res.json();
@@ -349,11 +407,26 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
           if (currentMember) {
             setActiveMember(currentMember);
             localStorage.setItem(`shopora_group_member_${code}`, currentMember.id);
+          } else {
+            setActiveMember(null);
           }
         }
+        return json.data;
+      } else {
+        // If session is closed, expired, or invalid
+        setActiveSession(null);
+        setActiveMember(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('shopora_group_code');
+          localStorage.removeItem(`shopora_group_member_${code}`);
+        }
+        return null;
       }
     } catch (err) {
       console.error('Failed to fetch group session details:', err);
+      setActiveSession(null);
+      setActiveMember(null);
+      return null;
     }
   };
 
