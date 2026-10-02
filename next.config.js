@@ -14,6 +14,12 @@ const nextConfig = {
       },
     ],
   },
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.cache = false;
+    }
+    return config;
+  },
 };
 
 // Force Next.js server module cache refresh for updated Prisma schema delegates

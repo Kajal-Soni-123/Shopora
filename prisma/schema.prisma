@@ -31,6 +31,7 @@ model User {
   groupMemberships   GroupSessionMember[]
   notifications      Notification[]
   wishlistItems      WishlistItem[]
+  tryOnJobs          TryOnJob[]
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 }
@@ -89,6 +90,12 @@ model Product {
   rating       Float       @default(4.7)
   reviewsCount Int         @default(120)
   attributes   Json?       // Key-value pairs for category custom fields
+  model3dUrl       String?
+  model3dFitting   Json?
+  model3dThumbnail String?
+  tryOnImage       String?
+  tryOnCategory    String?     // TOP, BOTTOM, DRESS, OUTERWEAR, FULL_OUTFIT, etc.
+  isTryOnAvailable Boolean     @default(false) // Opt-in per product; requires model3dUrl
   vendorId     String
   vendor       Vendor      @relation(fields: [vendorId], references: [id])
   categoryId   String
@@ -99,8 +106,36 @@ model Product {
   groupChatMessages GroupChatMessage[]
   reviews      Review[]
   wishlistItems WishlistItem[]
+  tryOnJobs    TryOnJob[]
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+}
+
+model TryOnJob {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  provider        String    @default("fashn")
+  providerJobId   String?
+  status          String    @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  userImageUrl    String
+  productImageUrl String
+  resultImageUrl  String?
+  errorMessage    String?
+  category        String?
+  inputHash       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime?
+
+  @@index([userId])
+  @@index([productId])
+  @@index([providerJobId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("try_on_jobs")
 }
 
 model CartItem {

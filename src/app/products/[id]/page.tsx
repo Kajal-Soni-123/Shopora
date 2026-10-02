@@ -23,6 +23,7 @@ import {
   Zap,
   Share2,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Product, CartItem, Order } from '@/lib/data';
 import { formatCurrency } from '@/lib/utils';
 import { Navbar } from '@/components/Navbar';
@@ -38,6 +39,23 @@ import { getColorStyle } from '@/lib/color-utils';
 import { useGroupShopping } from '@/context/GroupShoppingContext';
 import GroupShoppingBanner from '@/components/GroupShoppingBanner';
 import GroupShoppingModal from '@/components/GroupShoppingModal';
+import { detectJewelleryType, isProductEligibleForTryOn } from '@/lib/virtual-try-on/categoryUtils';
+import { isTryOnEnabled, supportsWristTryOn } from '@/lib/try-on/tryOnModel';
+
+// Loaded on demand: it pulls in three.js and the hand tracker.
+const ModelTryOnModal = dynamic(() => import('@/components/tryon/ModelTryOnModal').then((m) => m.ModelTryOnModal), {
+  ssr: false,
+});
+
+const Model3DViewer = dynamic(() => import('@/components/3d/Model3DViewer'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[320px] sm:h-[380px] bg-slate-100 rounded-2xl flex flex-col items-center justify-center text-slate-500 animate-pulse border border-slate-200">
+      <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" />
+      <p className="text-xs font-semibold text-slate-700">Initializing 3D Fit Studio...</p>
+    </div>
+  ),
+});
 
 interface Review {
   id: string;
@@ -76,7 +94,14 @@ export default function ProductDetailPage() {
 
   // Gallery & Variant Selection State
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeViewTab, setActiveViewTab] = useState<'image' | '3d'>('image');
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
+
+  // Detect Jewellery Type for Try-On Eligibility
+  const detectedJewelleryType = product ? detectJewelleryType(product as any) : null;
+  // Try On Yourself renders the vendor's 3D model onto the customer's photo; wrist items only for now.
+  const canTryOn = Boolean(product && isTryOnEnabled(product as any) && supportsWristTryOn(product as any));
 
   // Review Form State
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -423,28 +448,80 @@ export default function ProductDetailPage() {
 
         {/* TOP SECTION: Compact Flipkart/Meesho Style Product Showcase */}
         <div className="bg-white border border-slate-200/90 rounded-3xl p-4 sm:p-5 shadow-2xs grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-          {/* Left Column (5 Cols): Product Image Gallery - Exact Height Match with Right Column */}
+          {/* Left Column (5 Cols): Product Image Gallery / 3D Fit Studio */}
           <div className="lg:col-span-5 flex flex-col h-full space-y-2.5 max-w-[360px] mx-auto lg:max-w-none w-full">
-            <div className="relative flex-1 min-h-[260px] sm:min-h-[300px] w-full rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 shadow-2xs group flex items-center justify-center">
-              <Image
-                src={allImages[activeImageIndex] || product.image}
-                alt={product.title}
-                fill
-                sizes="(max-width: 1024px) 100vw, 360px"
-                className="object-contain p-3 transition-transform duration-300 group-hover:scale-105"
-                priority
-              />
-              <div className="absolute top-2 left-2 z-10">
-                <Badge
-                  variant="info"
-                  size="sm"
-                  className="bg-white/95 backdrop-blur-md text-slate-800 border-slate-200 shadow-2xs font-bold text-[10px] px-2 py-0.5"
+            {/* Gallery View Mode Switcher: 2D Photo vs 3D Fit Studio vs Try On Yourself */}
+            <div className="flex items-center justify-between gap-1.5 p-1 bg-slate-100/90 rounded-2xl border border-slate-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('image')}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  activeViewTab === 'image'
+                    ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>🖼️ 2D Photos</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveViewTab('3d')}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                  activeViewTab === '3d'
+                    ? 'bg-neutral-900 text-white shadow-md shadow-neutral-900/20'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
+                <span>3D Fit</span>
+              </button>
+              {canTryOn && (
+                <button
+                  type="button"
+                  onClick={() => setIsTryOnModalOpen(true)}
+                  className="flex-1 py-1.5 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-md shadow-indigo-600/20 cursor-pointer"
                 >
-                  <Warehouse className="w-3 h-3 mr-1 text-indigo-600" />
-                  {product.vendor?.warehouseLocation || 'Central Warehouse'}
-                </Badge>
-              </div>
+                  <Sparkles className="w-3.5 h-3.5 fill-white text-white" />
+                  <span>Try On</span>
+                </button>
+              )}
             </div>
+
+            {/* Display Mode: 2D Image or 3D Mannequin Fit Studio */}
+            {activeViewTab === '3d' ? (
+              <div className="w-full min-h-[380px] sm:min-h-[440px] rounded-2xl overflow-hidden shadow-2xs">
+                <Model3DViewer
+                  category={product.category?.name}
+                  productImage={product.image}
+                  productTitle={product.title}
+                  initialSize={selectedVariants['Size'] || selectedVariants['size'] || 'M'}
+                  onSizeChange={(sz) => {
+                    setSelectedVariants((prev) => ({ ...prev, Size: sz, size: sz }));
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="relative flex-1 min-h-[260px] sm:min-h-[300px] w-full rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 shadow-2xs group flex items-center justify-center">
+                <Image
+                  src={allImages[activeImageIndex] || product.image}
+                  alt={product.title}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 360px"
+                  className="object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+                  priority
+                />
+                <div className="absolute top-2 left-2 z-10">
+                  <Badge
+                    variant="info"
+                    size="sm"
+                    className="bg-white/95 backdrop-blur-md text-slate-800 border-slate-200 shadow-2xs font-bold text-[10px] px-2 py-0.5"
+                  >
+                    <Warehouse className="w-3 h-3 mr-1 text-indigo-600" />
+                    {product.vendor?.warehouseLocation || 'Central Warehouse'}
+                  </Badge>
+                </div>
+              </div>
+            )}
 
             {/* Gallery Thumbnails Carousel */}
             {allImages.length > 1 && (
@@ -523,110 +600,7 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Category Specifications & Variants (Color, Size, etc.) */}
-              {product.attributes && Object.keys(product.attributes).length > 0 && (
-                <div className="p-3 rounded-xl bg-white border border-slate-200/80 space-y-2 shadow-2xs">
-                  <span className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider block">
-                    Select Variant & Specifications
-                  </span>
 
-                  <div className="space-y-2">
-                    {Object.entries(product.attributes).map(([attrKey, attrVal]) => {
-                      let optionsArr: string[] = [];
-                      if (Array.isArray(attrVal)) {
-                        optionsArr = attrVal;
-                      } else if (typeof attrVal === 'string') {
-                        optionsArr = attrVal.split(',').map((s) => s.trim()).filter(Boolean);
-                      }
-
-                      if (optionsArr.length > 0) {
-                        const isColorKey = attrKey.toLowerCase().includes('color');
-                        const selectedVal = selectedVariants[attrKey] || optionsArr[0];
-
-                        return (
-                          <div key={attrKey} className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-700 block">
-                              {attrKey}: <span className="font-bold text-indigo-600 ml-1">{selectedVal}</span>
-                            </label>
-                            <div className="flex flex-wrap gap-1.5">
-                              {optionsArr.map((opt, optIdx) => {
-                                const isChosen = selectedVal === opt;
-                                const colorStyle = isColorKey ? getColorStyle(opt) : null;
-
-                                if (colorStyle) {
-                                  const isWhite = opt.toLowerCase() === 'white';
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={opt}
-                                      title={opt}
-                                      onClick={() => {
-                                        setSelectedVariants((prev) => ({
-                                          ...prev,
-                                          [attrKey]: opt,
-                                        }));
-                                        if (allImages[optIdx]) {
-                                          setActiveImageIndex(optIdx % allImages.length);
-                                        }
-                                      }}
-                                      className={`relative w-8 h-8 rounded-full transition-all flex items-center justify-center border shadow-2xs cursor-pointer ${
-                                        colorStyle.border
-                                      } ${
-                                        isChosen
-                                          ? 'ring-2 ring-indigo-600 ring-offset-2 scale-110 shadow-md z-10'
-                                          : 'hover:scale-105 opacity-85 hover:opacity-100'
-                                      }`}
-                                      style={{ background: colorStyle.background }}
-                                    >
-                                      {isChosen && (
-                                        <Check
-                                          className={`w-4 h-4 stroke-[3] ${
-                                            isWhite ? 'text-slate-900' : 'text-white'
-                                          }`}
-                                        />
-                                      )}
-                                    </button>
-                                  );
-                                }
-
-                                return (
-                                  <button
-                                    type="button"
-                                    key={opt}
-                                    onClick={() =>
-                                      setSelectedVariants((prev) => ({
-                                        ...prev,
-                                        [attrKey]: opt,
-                                      }))
-                                    }
-                                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
-                                      isChosen
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs scale-105'
-                                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                                    }`}
-                                  >
-                                    {opt}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div
-                          key={attrKey}
-                          className="flex items-center justify-between text-xs py-0.5 border-b border-slate-100 last:border-none"
-                        >
-                          <span className="font-bold text-slate-600">{attrKey}:</span>
-                          <span className="font-extrabold text-slate-900">{String(attrVal)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Compact Fulfillment & Trust Bar */}
               <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-200/80 flex items-center justify-between text-[11px] text-purple-900 font-medium">
@@ -640,6 +614,25 @@ export default function ProductDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* Dedicated AI Virtual Try-On Action Button */}
+            {canTryOn && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsTryOnModalOpen(true)}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 hover:from-slate-950 hover:to-indigo-900 text-white font-black text-xs sm:text-sm transition-all shadow-xl shadow-indigo-950/20 border border-indigo-400/30 flex items-center justify-center gap-2.5 cursor-pointer group hover:scale-[1.01]"
+                >
+                  <div className="w-6 h-6 rounded-lg bg-indigo-500/30 flex items-center justify-center text-amber-300">
+                    <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-pulse group-hover:rotate-12 transition-transform" />
+                  </div>
+                  <span className="tracking-wide">Try On Yourself</span>
+                  <span className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-extrabold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-sm ml-1">
+                    3D Try-On
+                  </span>
+                </button>
+              </div>
+            )}
 
             {/* Compact Action Buttons */}
             <div className="pt-3 border-t border-slate-200/80 flex items-center gap-3">
@@ -828,6 +821,22 @@ export default function ProductDetailPage() {
       />
 
       <GroupShoppingModal isOpen={isGroupModalOpen} onClose={() => setIsGroupModalOpen(false)} />
+
+      {product && canTryOn && isTryOnModalOpen && (
+        <ModelTryOnModal
+          isOpen={isTryOnModalOpen}
+          onClose={() => setIsTryOnModalOpen(false)}
+          product={{
+            id: product.id,
+            title: product.title,
+            price: product.price,
+            image: product.image,
+            model3dUrl: (product as any).model3dUrl,
+            model3dFitting: (product as any).model3dFitting,
+          }}
+          onAddToCart={() => handleAddToCart()}
+        />
+      )}
     </div>
   );
 }

@@ -49,14 +49,41 @@ export async function GET(request: Request) {
       ];
     }
 
-    const products = await prisma.product.findMany({
-      where,
-      include: {
-        vendor: true,
-        category: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    let products: any[] = [];
+    try {
+      products = await prisma.product.findMany({
+        where,
+        include: {
+          vendor: true,
+          category: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (dbErr: any) {
+      console.warn('[ProductsAPI] findMany failed, attempting explicit field selection:', dbErr?.message);
+      products = await prisma.product.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          price: true,
+          stock: true,
+          image: true,
+          images: true,
+          rating: true,
+          reviewsCount: true,
+          attributes: true,
+          vendorId: true,
+          categoryId: true,
+          vendor: true,
+          category: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
 
     return ApiResponse.success(products, 'Products retrieved successfully');
   } catch (error) {

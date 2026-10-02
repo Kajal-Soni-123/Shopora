@@ -5,3 +5,5 @@ node_modules
 .env.local
 .env.example
 dist
+# Vendor-uploaded try-on 3D models
+/uploads

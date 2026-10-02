@@ -8,8 +8,16 @@ import { buildCategoryHierarchyOptions } from '@/lib/categoryUtils';
 import { Input } from '@/components/common/Input';
 import { Textarea } from '@/components/common/Textarea';
 import { ImageUploader } from '@/components/common/ImageUploader';
+import { GlbModelUploader } from '@/components/tryon/GlbModelUploader';
+import {
+  DEFAULT_FITTING,
+  parseFitting,
+  supportsWristTryOn,
+  TRY_ON_MODEL_REQUIRED_MESSAGE,
+  type ModelFitting,
+} from '@/lib/try-on/tryOnModel';
 import { ColorPalettePicker } from '@/components/common/ColorPalettePicker';
-import { Package, DollarSign, Layers, Tag, Loader2, Sparkles, Sliders, Plus, Palette, X } from 'lucide-react';
+import { Package, DollarSign, Layers, Tag, Loader2, Sparkles, Sliders, Plus, Palette, X, Image as ImageIcon } from 'lucide-react';
 import { getColorStyle, COMMON_PRESET_COLORS } from '@/lib/color-utils';
 export interface CategoryFieldSpec {
   name: string;
@@ -44,11 +52,18 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [stock, setStock] = useState('');
-  const [image, setImage] = useState('');
+  const [frontImage, setFrontImage] = useState('');
+  const [backImage, setBackImage] = useState('');
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
 
   // Key-Value map for dynamic category fields
   const [attributes, setAttributes] = useState<Record<string, any>>({});
+
+  const [isTryOnAvailable, setIsTryOnAvailable] = useState<boolean>(false);
+  const [model3dUrl, setModel3dUrl] = useState<string>('');
+  const [model3dFitting, setModel3dFitting] = useState<ModelFitting>(DEFAULT_FITTING);
+  const [tryOnCategory, setTryOnCategory] = useState<string>('');
+  const [tryOnImage, setTryOnImage] = useState<string>('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +158,19 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
     if (!stock || isNaN(stockNum) || stockNum < 0) {
       newErrors.stock = 'Please enter a valid stock quantity.';
     }
-    if (!image) {
-      newErrors.image = 'Product cover image is required.';
+    if (!frontImage.trim()) {
+      newErrors.frontImage = 'Product front image is required.';
+    }
+    if (!backImage.trim()) {
+      newErrors.backImage = 'Product back image is required.';
+    }
+    if (isTryOnAvailable && !model3dUrl) {
+      newErrors.model3dUrl = TRY_ON_MODEL_REQUIRED_MESSAGE;
+    }
+    // Otherwise try-on would be saved as enabled but never shown to customers.
+    if (isTryOnAvailable && !supportsWristTryOn({ tryOnCategory, title, category: selectedCategoryObj })) {
+      newErrors.tryOnCategory =
+        'Try On Yourself currently works for watches and bracelets. Set the Try-On Category to Watches or Bracelets.';
     }
 
     // Validate required custom category fields
@@ -166,6 +192,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
     try {
       setLoading(true);
+      const combinedImages = Array.from(
+        new Set([backImage, ...galleryImages].filter((url) => typeof url === 'string' && url.trim().length > 0))
+      );
+
       const res = await fetch('/api/vendor/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,10 +204,21 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
           description,
           price: priceNum,
           stock: stockNum,
-          image,
-          images: galleryImages,
+          frontImage,
+          backImage,
+          image: frontImage,
+          images: combinedImages,
           categoryId: category,
-          attributes,
+          isTryOnAvailable,
+          model3dUrl: model3dUrl || null,
+          model3dFitting: model3dUrl ? model3dFitting : null,
+          tryOnCategory: tryOnCategory || null,
+          tryOnImage: tryOnImage ? tryOnImage.trim() : frontImage,
+          attributes: {
+            ...attributes,
+            frontImage,
+            backImage,
+          },
         }),
       });
 
@@ -191,7 +232,13 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
         setDescription('');
         setPrice('');
         setStock('');
-        setImage('');
+        setFrontImage('');
+        setBackImage('');
+        setTryOnImage('');
+        setTryOnCategory('');
+        setIsTryOnAvailable(false);
+        setModel3dUrl('');
+        setModel3dFitting(DEFAULT_FITTING);
         setGalleryImages([]);
         setAttributes({});
         setFieldErrors({});
@@ -426,17 +473,153 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
             </div>
           )}
 
-          {/* Drag & Drop Image Uploader + Gallery */}
+          {/* Product Front & Back Images (Both Compulsory/Required) */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-4">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <ImageIcon className="w-4 h-4 text-indigo-600" /> Mandatory Product Views (Front & Back)
+            </h3>
+            <p className="text-[11px] text-slate-500 font-medium">
+              Please upload clear photos for both the front side and back side of the product.
+            </p>
+
+            <div className="flex flex-col gap-4">
+              <ImageUploader
+                label="Product Front Image"
+                required={true}
+                value={frontImage}
+                error={fieldErrors.frontImage}
+                onChange={(img) => {
+                  setFrontImage(img);
+                  if (fieldErrors.frontImage) {
+                    setFieldErrors((prev) => ({ ...prev, frontImage: '' }));
+                  }
+                }}
+              />
+              <ImageUploader
+                label="Product Back Image"
+                required={true}
+                value={backImage}
+                error={fieldErrors.backImage}
+                onChange={(img) => {
+                  setBackImage(img);
+                  if (fieldErrors.backImage) {
+                    setFieldErrors((prev) => ({ ...prev, backImage: '' }));
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          {/* VIRTUAL TRY-ON CONFIGURATION BLOCK */}
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-purple-50/50 to-pink-50/30 border border-indigo-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Try On Yourself (3D)
+                </h3>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isTryOnAvailable}
+                  onChange={(e) => {
+                    setIsTryOnAvailable(e.target.checked);
+                    if (!e.target.checked && fieldErrors.model3dUrl) {
+                      setFieldErrors((prev) => ({ ...prev, model3dUrl: '' }));
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                <span className="ml-2 text-xs font-bold text-slate-700">
+                  {isTryOnAvailable ? 'Enabled' : 'Disabled'}
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[11px] text-slate-600 font-medium">
+              Customers upload a photo of their wrist and see this product on it, rendered from your 3D model. They
+              only see your normal product photos; the 3D model is used in the background.
+            </p>
+
+            <GlbModelUploader
+              label="Product 3D Model (.glb)"
+              required={isTryOnAvailable}
+              value={model3dUrl}
+              fitting={model3dFitting}
+              onFittingChange={setModel3dFitting}
+              error={fieldErrors.model3dUrl}
+              onChange={(url) => {
+                setModel3dUrl(url);
+                if (fieldErrors.model3dUrl) {
+                  setFieldErrors((prev) => ({ ...prev, model3dUrl: '' }));
+                }
+              }}
+            />
+            <p className="text-[11px] text-slate-500">
+              Get a .glb from your manufacturer&apos;s CAD files, a phone 3D scan (Polycam, KIRI Engine) or a 3D artist.
+              {model3dUrl && !isTryOnAvailable && (
+                <span className="font-semibold text-indigo-700"> Switch Try On Yourself on to show it to customers.</span>
+              )}
+            </p>
+
+            {isTryOnAvailable && (
+              <div className="space-y-4 pt-1">
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Select
+                    label="Try-On Category Override"
+                    options={[
+                      { label: 'Auto Detect (Recommended)', value: '' },
+                      { label: 'Tops / Shirts / T-Shirts', value: 'TOP' },
+                      { label: 'Bottoms / Jeans / Skirts / Pants', value: 'BOTTOM' },
+                      { label: 'Dresses / One-Piece / Sarees', value: 'DRESS' },
+                      { label: 'Outerwear / Jackets / Coats', value: 'OUTERWEAR' },
+                      { label: 'Full Outfits / Suits', value: 'FULL_OUTFIT' },
+                      { label: 'Necklaces / Pendants', value: 'NECKLACE' },
+                      { label: 'Earrings', value: 'EARRINGS' },
+                      { label: 'Rings', value: 'RING' },
+                      { label: 'Bracelets / Bangles', value: 'BRACELET' },
+                      { label: 'Watches', value: 'WATCH' },
+                      { label: 'Glasses / Sunglasses', value: 'EYEWEAR' },
+                      { label: 'Hats / Caps', value: 'HAT' },
+                      { label: 'Bags', value: 'BAG' },
+                      { label: 'Footwear', value: 'FOOTWEAR' },
+                    ]}
+                    value={tryOnCategory}
+                    error={fieldErrors.tryOnCategory}
+                    onChange={(val) => {
+                      setTryOnCategory(val);
+                      if (fieldErrors.tryOnCategory) {
+                        setFieldErrors((prev) => ({ ...prev, tryOnCategory: '' }));
+                      }
+                    }}
+                  />
+                  <div className="text-[11px] text-slate-600 flex items-center p-2.5 rounded-xl bg-white/80 border border-slate-200/60 font-medium">
+                    The category decides where the model is placed on the customer: wrist, finger, ears, neck or face.
+                  </div>
+                </div>
+
+                <ImageUploader
+                  label="Dedicated Clean Try-On Product Photo (Optional)"
+                  required={false}
+                  value={tryOnImage}
+                  onChange={(img) => setTryOnImage(img)}
+                />
+                <p className="text-[11px] text-slate-500">
+                  If left empty, the front product image will automatically be used as the AI Virtual Try-On garment reference.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Optional Additional Gallery Images */}
           <ImageUploader
-            label="Product Cover Image"
-            value={image}
-            error={fieldErrors.image}
-            onChange={(img) => {
-              setImage(img);
-              if (fieldErrors.image) {
-                setFieldErrors((prev) => ({ ...prev, image: '' }));
-              }
-            }}
+            label="Additional Gallery Photos (Optional)"
+            required={false}
+            value=""
+            onChange={() => {}}
             images={galleryImages}
             onImagesChange={(imgs) => setGalleryImages(imgs)}
           />

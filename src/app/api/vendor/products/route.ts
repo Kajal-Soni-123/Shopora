@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
 import { ApiResponse } from '@/lib/api-response';
+import { isValidTryOnModelUrl, parseFitting, TRY_ON_MODEL_REQUIRED_MESSAGE } from '@/lib/try-on/tryOnModel';
 
 // GET /api/vendor/products - Fetch products owned by the authenticated vendor
 export async function GET() {
@@ -38,7 +39,26 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { title, description, price, stock, image, images, categoryId, attributes } = body;
+    const {
+      title,
+      description,
+      price,
+      stock,
+      frontImage,
+      backImage,
+      image,
+      images,
+      categoryId,
+      attributes,
+      isTryOnAvailable,
+      model3dUrl,
+      model3dFitting,
+      tryOnCategory,
+      tryOnImage,
+    } = body;
+
+    const finalFrontImage = (frontImage || image || '').trim();
+    const finalBackImage = (backImage || (Array.isArray(images) && images[0]) || '').trim();
 
     if (!title || typeof title !== 'string' || title.trim().length === 0) {
       return ApiResponse.badRequest('Product title is required.');
@@ -52,8 +72,18 @@ export async function POST(request: Request) {
     if (typeof stock !== 'number' || stock < 0) {
       return ApiResponse.badRequest('Stock quantity must be 0 or greater.');
     }
-    if (!image || typeof image !== 'string') {
-      return ApiResponse.badRequest('Product image URL is required.');
+    if (!finalFrontImage) {
+      return ApiResponse.badRequest('Product front image URL is required.');
+    }
+    if (!finalBackImage) {
+      return ApiResponse.badRequest('Product back image URL is required.');
+    }
+    if (model3dUrl && !isValidTryOnModelUrl(model3dUrl)) {
+      return ApiResponse.badRequest('The 3D model must be uploaded to Shopora or be an https:// link to a .glb file.');
+    }
+    const tryOnEnabled = Boolean(isTryOnAvailable);
+    if (tryOnEnabled && !model3dUrl) {
+      return ApiResponse.badRequest(TRY_ON_MODEL_REQUIRED_MESSAGE);
     }
 
     // Ensure category exists or fallback to first existing category
@@ -70,15 +100,32 @@ export async function POST(request: Request) {
       }
     }
 
+    const combinedImages = Array.from(
+      new Set(
+        [finalBackImage, ...(Array.isArray(images) ? images : [])].filter(
+          (url) => typeof url === 'string' && url.trim().length > 0
+        )
+      )
+    );
+
     const newProduct = await prisma.product.create({
       data: {
         title: title.trim(),
         description: description.trim(),
         price,
         stock,
-        image,
-        images: Array.isArray(images) ? images : [],
-        attributes: attributes || {},
+        image: finalFrontImage,
+        images: combinedImages,
+        tryOnImage: tryOnImage ? tryOnImage.trim() : finalFrontImage,
+        tryOnCategory: tryOnCategory || null,
+        isTryOnAvailable: tryOnEnabled,
+        model3dUrl: model3dUrl ? model3dUrl.trim() : null,
+        ...(model3dUrl ? { model3dFitting: { ...parseFitting(model3dFitting) } } : {}),
+        attributes: {
+          ...(attributes || {}),
+          frontImage: finalFrontImage,
+          backImage: finalBackImage,
+        },
         vendorId: sessionUser.vendorId,
         categoryId: finalCategoryId,
         rating: 4.8,

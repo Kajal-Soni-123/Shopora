@@ -21,6 +21,8 @@ export interface Product {
   image: string;
   images?: string[];
   attributes?: Record<string, any>;
+  tryOnImage?: string;
+  isTryOnAvailable?: boolean;
   rating: number;
   reviewsCount: number;
   vendorId: string;

@@ -39,6 +39,7 @@ async function analyzePromptWithLLM(
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(4000),
           body: JSON.stringify({
             contents: [
               {

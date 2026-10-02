@@ -43,8 +43,8 @@ export default function NotificationDrawer() {
 
   useEffect(() => {
     fetchNotifications();
-    // Poll every 15 seconds for real-time in-app updates
-    const interval = setInterval(fetchNotifications, 15000);
+    // Poll every 60 seconds to reduce server requests while maintaining updates
+    const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
   }, []);
 

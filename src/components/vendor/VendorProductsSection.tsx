@@ -18,6 +18,11 @@ export interface VendorProduct {
   images?: string[];
   attributes?: Record<string, any>;
   categoryId?: string;
+  tryOnImage?: string;
+  tryOnCategory?: string;
+  isTryOnAvailable?: boolean;
+  model3dUrl?: string | null;
+  model3dFitting?: unknown;
   rating: number;
   reviewsCount: number;
   category: { id: string; name: string };

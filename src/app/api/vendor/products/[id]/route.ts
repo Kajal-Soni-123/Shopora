@@ -2,8 +2,10 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { getSessionUser } from '@/lib/auth';
 import { ApiResponse } from '@/lib/api-response';
+import { isValidTryOnModelUrl, parseFitting, TRY_ON_MODEL_REQUIRED_MESSAGE } from '@/lib/try-on/tryOnModel';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -33,9 +35,52 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { title, description, price, stock, image, images, categoryId, attributes } = body;
+    const {
+      title,
+      description,
+      price,
+      stock,
+      frontImage,
+      backImage,
+      image,
+      images,
+      categoryId,
+      attributes,
+      isTryOnAvailable,
+      model3dUrl,
+      model3dFitting,
+      tryOnCategory,
+      tryOnImage,
+    } = body;
 
     const updateData: any = {};
+
+    if (isTryOnAvailable !== undefined) {
+      updateData.isTryOnAvailable = Boolean(isTryOnAvailable);
+    }
+    if (model3dUrl !== undefined) {
+      if (model3dUrl && !isValidTryOnModelUrl(model3dUrl)) {
+        return ApiResponse.badRequest('The 3D model must be uploaded to Shopora or be an https:// link to a .glb file.');
+      }
+      updateData.model3dUrl = model3dUrl ? model3dUrl.trim() : null;
+    }
+    if (model3dFitting !== undefined) {
+      updateData.model3dFitting = model3dFitting ? { ...parseFitting(model3dFitting) } : Prisma.DbNull;
+    }
+    // Only enforce when this request touches try-on, so unrelated updates to older products keep working.
+    if (isTryOnAvailable !== undefined || model3dUrl !== undefined) {
+      const willBeEnabled = updateData.isTryOnAvailable ?? existingProduct.isTryOnAvailable;
+      const willHaveModel = model3dUrl !== undefined ? updateData.model3dUrl : existingProduct.model3dUrl;
+      if (willBeEnabled && !willHaveModel) {
+        return ApiResponse.badRequest(TRY_ON_MODEL_REQUIRED_MESSAGE);
+      }
+    }
+    if (tryOnCategory !== undefined) {
+      updateData.tryOnCategory = tryOnCategory || null;
+    }
+    if (tryOnImage !== undefined) {
+      updateData.tryOnImage = tryOnImage ? tryOnImage.trim() : null;
+    }
 
     if (title !== undefined) {
       if (typeof title !== 'string' || title.trim().length === 0) {
@@ -65,15 +110,28 @@ export async function PUT(request: Request, { params }: RouteParams) {
       updateData.stock = stock;
     }
 
-    if (image !== undefined) {
-      if (typeof image !== 'string' || image.trim().length === 0) {
-        return ApiResponse.badRequest('Product cover image URL is required.');
+    const finalFrontImage = (frontImage || image || '').trim();
+    if (frontImage !== undefined || image !== undefined) {
+      if (!finalFrontImage) {
+        return ApiResponse.badRequest('Product front image URL is required.');
       }
-      updateData.image = image;
+      updateData.image = finalFrontImage;
     }
 
-    if (images !== undefined && Array.isArray(images)) {
-      updateData.images = images;
+    if (backImage !== undefined || images !== undefined) {
+      const finalBackImage = (backImage || (Array.isArray(images) && images[0]) || '').trim();
+      if (!finalBackImage && backImage !== undefined) {
+        return ApiResponse.badRequest('Product back image URL is required.');
+      }
+      if (Array.isArray(images) || finalBackImage) {
+        updateData.images = Array.from(
+          new Set(
+            [finalBackImage, ...(Array.isArray(images) ? images : [])].filter(
+              (url) => typeof url === 'string' && url.trim().length > 0
+            )
+          )
+        );
+      }
     }
 
     if (categoryId !== undefined && typeof categoryId === 'string' && categoryId.length > 0) {
@@ -81,7 +139,13 @@ export async function PUT(request: Request, { params }: RouteParams) {
     }
 
     if (attributes !== undefined) {
-      updateData.attributes = attributes;
+      const existingAttrs = (existingProduct.attributes && typeof existingProduct.attributes === 'object') ? existingProduct.attributes : {};
+      updateData.attributes = {
+        ...existingAttrs,
+        ...(attributes || {}),
+        ...(finalFrontImage ? { frontImage: finalFrontImage } : {}),
+        ...(backImage ? { backImage } : {}),
+      };
     }
 
     const updatedProduct = await prisma.product.update({

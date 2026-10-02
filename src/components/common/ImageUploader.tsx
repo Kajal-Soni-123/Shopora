@@ -6,6 +6,7 @@ import { UploadCloud, Image as ImageIcon, Link as LinkIcon, X, CheckCircle2, Plu
 
 interface ImageUploaderProps {
   label?: string;
+  required?: boolean;
   value: string;
   onChange: (imageUrl: string) => void;
   images?: string[];
@@ -15,6 +16,7 @@ interface ImageUploaderProps {
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
   label = 'Product Image',
+  required = true,
   value,
   onChange,
   images = [],
@@ -90,7 +92,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-slate-700">
-            {label} <span className="text-rose-500 font-extrabold">*</span>
+            {label} {required && <span className="text-rose-500 font-extrabold">*</span>}
           </label>
           <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
             <button

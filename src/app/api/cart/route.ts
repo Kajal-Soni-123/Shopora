@@ -20,17 +20,45 @@ export async function GET() {
       return ApiResponse.success([]);
     }
 
-    const cartItems = await prisma.cartItem.findMany({
-      where: { userId: sessionUser.userId },
-      include: {
-        product: {
-          include: {
-            vendor: true,
+    let cartItems: any[] = [];
+    try {
+      cartItems = await prisma.cartItem.findMany({
+        where: { userId: sessionUser.userId },
+        include: {
+          product: {
+            include: {
+              vendor: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+        orderBy: { createdAt: 'asc' },
+      });
+    } catch (dbErr: any) {
+      console.warn('[CartAPI] Full findMany failed, attempting standard product selection:', dbErr?.message);
+      cartItems = await prisma.cartItem.findMany({
+        where: { userId: sessionUser.userId },
+        include: {
+          product: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              price: true,
+              stock: true,
+              image: true,
+              images: true,
+              rating: true,
+              reviewsCount: true,
+              attributes: true,
+              vendorId: true,
+              categoryId: true,
+              vendor: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    }
 
     const formattedCart = cartItems.map((item) => ({
       id: item.id,

@@ -15,26 +15,63 @@ export async function GET(
       return ApiResponse.badRequest('Product ID is required.');
     }
 
-    const product = await prisma.product.findUnique({
-      where: { id: productId },
-      include: {
-        vendor: true,
-        category: true,
-        reviews: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                avatar: true,
+    let product: any = null;
+    try {
+      product = await prisma.product.findUnique({
+        where: { id: productId },
+        include: {
+          vendor: true,
+          category: true,
+          reviews: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
               },
             },
+            orderBy: { createdAt: 'desc' },
           },
-          orderBy: { createdAt: 'desc' },
         },
-      },
-    });
+      });
+    } catch (dbErr: any) {
+      console.warn('[ProductDetailsAPI] Default findUnique failed, attempting explicit selection:', dbErr?.message);
+      product = await prisma.product.findUnique({
+        where: { id: productId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          price: true,
+          stock: true,
+          image: true,
+          images: true,
+          rating: true,
+          reviewsCount: true,
+          attributes: true,
+          vendorId: true,
+          categoryId: true,
+          vendor: true,
+          category: true,
+          reviews: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  avatar: true,
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+    }
 
     if (!product) {
       return ApiResponse.notFound('Product not found.');
@@ -68,18 +105,46 @@ export async function GET(
     });
 
     // Fetch related products strictly matching the target category family (NO cross-category fallback)
-    const relatedProducts = await prisma.product.findMany({
-      where: {
-        categoryId: { in: Array.from(relatedCategoryIds) },
-        id: { not: product.id },
-      },
-      include: {
-        vendor: true,
-        category: true,
-      },
-      take: 8,
-      orderBy: { createdAt: 'desc' },
-    });
+    let relatedProducts: any[] = [];
+    try {
+      relatedProducts = await prisma.product.findMany({
+        where: {
+          categoryId: { in: Array.from(relatedCategoryIds) },
+          id: { not: product.id },
+        },
+        include: {
+          vendor: true,
+          category: true,
+        },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (relErr: any) {
+      relatedProducts = await prisma.product.findMany({
+        where: {
+          categoryId: { in: Array.from(relatedCategoryIds) },
+          id: { not: product.id },
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          price: true,
+          stock: true,
+          image: true,
+          images: true,
+          rating: true,
+          reviewsCount: true,
+          attributes: true,
+          vendorId: true,
+          categoryId: true,
+          vendor: true,
+          category: true,
+        },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+      });
+    }
 
     // Check if current user has purchased this product
     let hasPurchased = false;
