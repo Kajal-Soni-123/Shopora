@@ -18,6 +18,8 @@ declare global {
 export default function PhotoTryOnDebug() {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [info, setInfo] = useState<string>('Choose a photo.');
+  // Clean composite + mask, for testing ml/watch-tryon/serve_tryon.ipynb.
+  const [exports, setExports] = useState<{ composite: string; mask: string } | null>(null);
 
   const run = async (file: File) => {
     const params = new URLSearchParams(window.location.search);
@@ -54,6 +56,8 @@ export default function PhotoTryOnDebug() {
       const debug = { found, ...renderer.debugInfo() };
 
       if (output) {
+        const mask = renderer.renderMask();
+        if (mask) setExports({ composite: output.toDataURL('image/png'), mask: mask.toDataURL('image/png') });
         // Overlay the landmarks so tracking quality is visible.
         const ctx = output.getContext('2d')!;
         ctx.fillStyle = '#22d3ee';
@@ -95,6 +99,16 @@ export default function PhotoTryOnDebug() {
       />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       {resultUrl && <img id="result" src={resultUrl} alt="Try-on debug result" className="max-w-full" />}
+      {exports && (
+        <div className="flex gap-3 text-sm">
+          <a className="font-semibold text-indigo-600 underline" href={exports.composite} download="tryon-composite.png">
+            Download composite
+          </a>
+          <a className="font-semibold text-indigo-600 underline" href={exports.mask} download="tryon-mask.png">
+            Download mask
+          </a>
+        </div>
+      )}
       <pre id="info" className="whitespace-pre-wrap text-xs">
         {info}
       </pre>

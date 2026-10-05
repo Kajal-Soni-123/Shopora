@@ -40,7 +40,7 @@ import { useGroupShopping } from '@/context/GroupShoppingContext';
 import GroupShoppingBanner from '@/components/GroupShoppingBanner';
 import GroupShoppingModal from '@/components/GroupShoppingModal';
 import { detectJewelleryType, isProductEligibleForTryOn } from '@/lib/virtual-try-on/categoryUtils';
-import { isTryOnEnabled, supportsWristTryOn } from '@/lib/try-on/tryOnModel';
+import { getTryOnPlacement, getWristItem, isTryOnEnabled } from '@/lib/try-on/tryOnModel';
 
 // Loaded on demand: it pulls in three.js and the hand tracker.
 const ModelTryOnModal = dynamic(() => import('@/components/tryon/ModelTryOnModal').then((m) => m.ModelTryOnModal), {
@@ -100,8 +100,9 @@ export default function ProductDetailPage() {
 
   // Detect Jewellery Type for Try-On Eligibility
   const detectedJewelleryType = product ? detectJewelleryType(product as any) : null;
-  // Try On Yourself renders the vendor's 3D model onto the customer's photo; wrist items only for now.
-  const canTryOn = Boolean(product && isTryOnEnabled(product as any) && supportsWristTryOn(product as any));
+  // Try On Yourself renders the vendor's 3D model onto the customer's photo: wrist items and earrings.
+  const tryOnPlacement = product ? getTryOnPlacement(product as any) : null;
+  const canTryOn = Boolean(product && isTryOnEnabled(product as any) && tryOnPlacement);
 
   // Review Form State
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -826,6 +827,8 @@ export default function ProductDetailPage() {
         <ModelTryOnModal
           isOpen={isTryOnModalOpen}
           onClose={() => setIsTryOnModalOpen(false)}
+          placement={tryOnPlacement ?? 'wrist'}
+          wristItem={getWristItem(product as any)}
           product={{
             id: product.id,
             title: product.title,

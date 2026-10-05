@@ -4,9 +4,9 @@ import { ArScene, createContactShadows, createWristOccluder, disposeObject, WRIS
 import { computeWristPose, WATCH_OFFSET_FROM_WRIST_M, type WristPose } from './wristPose';
 import { measureForearm, type ForearmMeasurement, type SkinMask } from './wristMeasure';
 import { isRightHandFromLabel } from './handTracker';
+import { photoRenderScale } from './compositing';
+import type { WristItem } from '../tryOnModel';
 
-/** Phone photos can be 12+ MP; this keeps detection and WebGL fast without visible quality loss. */
-const MAX_PHOTO_SIDE = 2048;
 
 /** How far the measured wrist may resize the product versus the landmark estimate, to contain bad masks. */
 const MIN_WRIST_FACTOR = 0.7;
@@ -20,6 +20,21 @@ export interface PhotoRenderOptions {
   fit: number;
   /** Puts the product on the other side of the wrist when handedness was misread. */
   flipSide: boolean;
+  /** Turns the product around the forearm, in degrees: 0 = dial on the back of the wrist, 180 = palm side. */
+  rotation?: number;
+}
+
+const WRIST_ELLIPSE = new THREE.Matrix4().makeScale(WRIST_RADIUS_X, 1, WRIST_RADIUS_Z);
+const WRIST_ELLIPSE_INVERSE = WRIST_ELLIPSE.clone().invert();
+
+/**
+ * Rotation about the forearm (+Y) that follows the wrist's oval cross-section instead of a circle,
+ * so a band fitted to the wrist keeps hugging it at every angle. Distortion is greatest at 90°,
+ * where the case is seen edge-on and it doesn't show.
+ */
+function rotationAroundWrist(degrees: number): THREE.Matrix4 {
+  const turn = new THREE.Matrix4().makeRotationY(THREE.MathUtils.degToRad(degrees));
+  return WRIST_ELLIPSE.clone().multiply(turn).multiply(WRIST_ELLIPSE_INVERSE);
 }
 
 interface Placement {
@@ -67,19 +82,29 @@ function placeOnForearm(pose: WristPose, forearm: ForearmMeasurement, photoHeigh
 export class PhotoTryOnRenderer {
   private readonly ar = new ArScene();
   private readonly rig = new THREE.Group();
+  /** Holds the product and its shadows so they can turn around the wrist; the occluder stays put. */
+  private readonly spinner = new THREE.Group();
   private readonly photo = document.createElement('canvas');
   private readonly output = document.createElement('canvas');
   private readonly modelSize: THREE.Vector3;
+  private readonly shadows: THREE.Group;
   private detection: HandLandmarkerResult | null = null;
   private skinMask: SkinMask | null = null;
   private lastPose: WristPose | null = null;
   private lastForearm: ForearmMeasurement | null = null;
   private lastPlacement: Placement | null = null;
 
-  constructor(model: THREE.Group) {
+  constructor(model: THREE.Group, item: WristItem = 'watch') {
     this.modelSize = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
-    const caseRadius = THREE.MathUtils.clamp(this.modelSize.x / 2, 0.012, 0.03);
-    this.rig.add(createWristOccluder(), createContactShadows({ bandWidth: 0.02, caseRadius }), model);
+    // Along the arm (Y) a watch is as long as its case; across the wrist (X) is the whole band.
+    // A bracelet has no case, and its band is as wide (along the arm) as the model itself.
+    this.shadows =
+      item === 'watch'
+        ? createContactShadows({ bandWidth: 0.02, caseRadius: THREE.MathUtils.clamp(this.modelSize.y / 2, 0.01, 0.025) })
+        : createContactShadows({ bandWidth: THREE.MathUtils.clamp(this.modelSize.y, 0.004, 0.03), caseRadius: 0 });
+    this.spinner.matrixAutoUpdate = false;
+    this.spinner.add(this.shadows, model);
+    this.rig.add(createWristOccluder(), this.spinner);
     this.rig.visible = false;
     this.ar.scene.add(this.rig);
   }
@@ -89,12 +114,15 @@ export class PhotoTryOnRenderer {
    * Returns false when no hand is visible.
    */
   setPhoto(image: HTMLImageElement, landmarker: HandLandmarker, segmenter?: ImageSegmenter): boolean {
-    const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(image.naturalWidth, image.naturalHeight));
+    // Huge photos are shrunk; small ones are enlarged so the product renders crisp.
+    const scale = photoRenderScale(image.naturalWidth, image.naturalHeight);
     const width = Math.round(image.naturalWidth * scale);
     const height = Math.round(image.naturalHeight * scale);
     this.photo.width = this.output.width = width;
     this.photo.height = this.output.height = height;
-    this.photo.getContext('2d')!.drawImage(image, 0, 0, width, height);
+    const photoCtx = this.photo.getContext('2d')!;
+    photoCtx.imageSmoothingQuality = 'high';
+    photoCtx.drawImage(image, 0, 0, width, height);
 
     this.ar.renderer.setPixelRatio(1);
     this.ar.renderer.setSize(width, height, false);
@@ -118,7 +146,7 @@ export class PhotoTryOnRenderer {
   }
 
   /** Composites the product onto the photo. Returns null if there is no detected wrist to place it on. */
-  render({ fit, flipSide }: PhotoRenderOptions): HTMLCanvasElement | null {
+  render({ fit, flipSide, rotation = 0 }: PhotoRenderOptions): HTMLCanvasElement | null {
     const image = this.detection?.landmarks[0];
     const world = this.detection?.worldLandmarks[0];
     if (!image || !world) return null;
@@ -148,6 +176,8 @@ export class PhotoTryOnRenderer {
     this.rig.position.copy(placement.position);
     this.rig.quaternion.copy(placement.quaternion);
     this.rig.scale.setScalar(placement.scale * fit);
+    this.spinner.matrix.copy(rotationAroundWrist(rotation));
+    this.spinner.matrixWorldNeedsUpdate = true;
     this.rig.visible = true;
     this.ar.render();
 
@@ -155,6 +185,53 @@ export class PhotoTryOnRenderer {
     ctx.drawImage(this.photo, 0, 0);
     ctx.drawImage(this.ar.renderer.domElement, 0, 0);
     return this.output;
+  }
+
+  /**
+   * White-on-black mask of where the last render drew the product, grown by
+   * a few millimetres so an AI enhancement pass can blend the edges into the skin. Call after render().
+   */
+  renderMask(): HTMLCanvasElement | null {
+    if (!this.lastPlacement) return null;
+    const { width, height } = this.photo;
+
+    // Draw the product alone; the soft shadows would otherwise widen the mask into a blob.
+    this.shadows.visible = false;
+    this.ar.render();
+    const silhouette = document.createElement('canvas');
+    silhouette.width = width;
+    silhouette.height = height;
+    const sctx = silhouette.getContext('2d', { willReadFrequently: true })!;
+    sctx.drawImage(this.ar.renderer.domElement, 0, 0);
+    this.shadows.visible = true;
+    this.ar.render();
+    const pixels = sctx.getImageData(0, 0, width, height);
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      const covered = pixels.data[i + 3] > 8;
+      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = 255;
+      pixels.data[i + 3] = covered ? 255 : 0;
+    }
+    sctx.putImageData(pixels, 0, 0);
+
+    // Blur then threshold = dilation by roughly the blur radius.
+    const growPx = Math.max(4, Math.round(0.006 * this.lastPlacement.scale));
+    const mask = document.createElement('canvas');
+    mask.width = width;
+    mask.height = height;
+    const mctx = mask.getContext('2d', { willReadFrequently: true })!;
+    mctx.fillStyle = '#000';
+    mctx.fillRect(0, 0, width, height);
+    mctx.filter = `blur(${growPx}px)`;
+    mctx.drawImage(silhouette, 0, 0);
+    mctx.filter = 'none';
+    const grown = mctx.getImageData(0, 0, width, height);
+    for (let i = 0; i < grown.data.length; i += 4) {
+      const value = grown.data[i] > 10 ? 255 : 0;
+      grown.data[i] = grown.data[i + 1] = grown.data[i + 2] = value;
+      grown.data[i + 3] = 255;
+    }
+    mctx.putImageData(grown, 0, 0);
+    return mask;
   }
 
   /** Tracking and placement numbers from the last render, for tuning. */

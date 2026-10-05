@@ -12,7 +12,10 @@ import { GlbModelUploader } from '@/components/tryon/GlbModelUploader';
 import {
   DEFAULT_FITTING,
   parseFitting,
-  supportsWristTryOn,
+  getTryOnPlacement,
+  getWristItem,
+  supportsTryOn,
+  TRY_ON_UNSUPPORTED_MESSAGE,
   TRY_ON_MODEL_REQUIRED_MESSAGE,
   type ModelFitting,
 } from '@/lib/try-on/tryOnModel';
@@ -168,9 +171,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
       newErrors.model3dUrl = TRY_ON_MODEL_REQUIRED_MESSAGE;
     }
     // Otherwise try-on would be saved as enabled but never shown to customers.
-    if (isTryOnAvailable && !supportsWristTryOn({ tryOnCategory, title, category: selectedCategoryObj })) {
-      newErrors.tryOnCategory =
-        'Try On Yourself currently works for watches and bracelets. Set the Try-On Category to Watches or Bracelets.';
+    if (isTryOnAvailable && !supportsTryOn({ tryOnCategory, title, category: selectedCategoryObj })) {
+      newErrors.tryOnCategory = TRY_ON_UNSUPPORTED_MESSAGE;
     }
 
     // Validate required custom category fields
@@ -545,6 +547,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({
 
             <GlbModelUploader
               label="Product 3D Model (.glb)"
+              placement={getTryOnPlacement({ tryOnCategory, title, category: selectedCategoryObj }) ?? 'wrist'}
+              wristItem={getWristItem({ tryOnCategory, title, category: selectedCategoryObj })}
               required={isTryOnAvailable}
               value={model3dUrl}
               fitting={model3dFitting}

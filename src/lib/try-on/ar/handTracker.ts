@@ -1,8 +1,12 @@
-import type { HandLandmarker, ImageSegmenter } from '@mediapipe/tasks-vision';
+import type { FaceLandmarker, HandLandmarker, ImageSegmenter, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 const MEDIAPIPE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm';
 const HAND_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const FACE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+const POSE_MODEL_URL =
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
 const SKIN_SEGMENTER_URL =
   'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite';
 
@@ -22,6 +26,32 @@ export async function createHandLandmarker(runningMode: 'IMAGE' | 'VIDEO'): Prom
       numHands: 1,
       minHandDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
+    });
+  return create('GPU').catch(() => create('CPU'));
+}
+
+/** Loads MediaPipe's face landmarker (478 points) for placing earrings, preferring the GPU. */
+export async function createFaceLandmarker(): Promise<FaceLandmarker> {
+  const { vision, fileset } = await loadVision();
+  const create = (delegate: 'GPU' | 'CPU') =>
+    vision.FaceLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      numFaces: 1,
+      minFaceDetectionConfidence: 0.5,
+    });
+  return create('GPU').catch(() => create('CPU'));
+}
+
+/** Loads MediaPipe's pose landmarker (shoulders, mouth, metric world points) for placing necklaces. */
+export async function createPoseLandmarker(): Promise<PoseLandmarker> {
+  const { vision, fileset } = await loadVision();
+  const create = (delegate: 'GPU' | 'CPU') =>
+    vision.PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: POSE_MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      numPoses: 1,
+      minPoseDetectionConfidence: 0.5,
     });
   return create('GPU').catch(() => create('CPU'));
 }

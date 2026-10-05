@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { TessellateModifier } from 'three/examples/jsm/modifiers/TessellateModifier.js';
 import { WRIST_RADIUS_X, WRIST_RADIUS_Z } from './wristScene';
-import { DEFAULT_FITTING, type ModelFitting } from '../tryOnModel';
+import { DEFAULT_FITTING, type ModelFitting, type WristItem } from '../tryOnModel';
 
 export { DEFAULT_FITTING, parseFitting, supportsWristTryOn, type ModelFitting } from '../tryOnModel';
 
@@ -12,6 +13,63 @@ export { DEFAULT_FITTING, parseFitting, supportsWristTryOn, type ModelFitting } 
 const CLOSED_LOOP_WIDTH_M = 2 * (WRIST_RADIUS_X + 0.003);
 /** Case diameter of a typical watch, used when the strap lies flat and can't be fitted to the wrist. */
 const FLAT_WATCH_CASE_M = 0.042;
+
+/** Gap between the wrist and the inside of a bracelet wrapped from a flat model. */
+const BRACELET_SLACK_M = 0.002;
+/** A flat bracelet is cut into pieces at most this fraction of its length, so it bends smoothly. */
+const BEND_SEGMENT_FRACTION = 1 / 72;
+
+/** Ramanujan's approximation of an ellipse's perimeter. */
+function ellipsePerimeter(a: number, b: number): number {
+  return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+}
+
+/**
+ * Bends a bracelet modelled lying flat (length along X, width along Y, outer face +Z) all the way
+ * around the wrist, so its length becomes the wrist's circumference plus a little slack.
+ * The middle of the strip ends up on the back of the wrist, the two ends meet underneath.
+ * Returns new meshes; the input's (possibly shared) geometry is not modified.
+ */
+function wrapFlatBracelet(inner: THREE.Object3D, wrapper: THREE.Group, fitting: ModelFitting): THREE.Group {
+  wrapper.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(inner);
+  const length = box.max.x - box.min.x;
+  const centreX = (box.min.x + box.max.x) / 2;
+  const centreY = (box.min.y + box.max.y) / 2;
+  const a = (WRIST_RADIUS_X + BRACELET_SLACK_M) * fitting.scale;
+  const b = (WRIST_RADIUS_Z + BRACELET_SLACK_M) * fitting.scale;
+  const scale = length > 0 ? ellipsePerimeter(a, b) / length : 1;
+  const tessellate = new TessellateModifier(Math.max(length * BEND_SEGMENT_FRACTION, 1e-6), 8);
+
+  const bent = new THREE.Group();
+  const point = new THREE.Vector3();
+  inner.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    let geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+    if (geometry.index) geometry = geometry.toNonIndexed();
+    // Long flat faces must be split before bending or they'd cut straight across the curve.
+    geometry = tessellate.modify(geometry);
+    const position = geometry.getAttribute('position');
+    for (let i = 0; i < position.count; i++) {
+      point.fromBufferAttribute(position, i);
+      const angle = (2 * Math.PI * (point.x - centreX)) / length;
+      const depth = (point.z - box.min.z) * scale;
+      position.setXYZ(i, Math.sin(angle) * (a + depth), (point.y - centreY) * scale, Math.cos(angle) * (b + depth));
+    }
+    position.needsUpdate = true;
+    geometry.deleteAttribute('normal');
+    geometry.computeVertexNormals();
+    // Tessellation drops draw groups, so a multi-material mesh keeps its first material.
+    const piece = new THREE.Mesh(geometry, Array.isArray(mesh.material) ? mesh.material[0] : mesh.material);
+    piece.name = mesh.name;
+    bent.add(piece);
+  });
+
+  const result = new THREE.Group();
+  result.add(bent);
+  return result;
+}
 
 /** A band that wraps the wrist is about as deep (front to back) as it is wide. */
 export function isClosedLoop(size: THREE.Vector3): boolean {
@@ -25,7 +83,11 @@ export function isClosedLoop(size: THREE.Vector3): boolean {
  * A model exported in glTF's default "front faces +Z, up is +Y" orientation, worn on an upright arm,
  * needs no rotation.
  */
-export function normalizeWristModel(source: THREE.Object3D, fitting: ModelFitting = DEFAULT_FITTING): THREE.Group {
+export function normalizeWristModel(
+  source: THREE.Object3D,
+  fitting: ModelFitting = DEFAULT_FITTING,
+  item: WristItem = 'watch'
+): THREE.Group {
   const inner = new THREE.Group();
   inner.add(source);
   const [rx, ry, rz] = fitting.rotation;
@@ -37,6 +99,8 @@ export function normalizeWristModel(source: THREE.Object3D, fitting: ModelFittin
 
   const size = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
   const closed = isClosedLoop(size);
+  // A flat watch rests on the wrist (the case is what matters); a flat bracelet must go all the way round.
+  if (!closed && item === 'bracelet') return wrapFlatBracelet(inner, wrapper, fitting);
   const measured = closed ? size.x : size.y;
   const target = closed ? CLOSED_LOOP_WIDTH_M : FLAT_WATCH_CASE_M;
   inner.scale.setScalar(measured > 0 ? (target / measured) * fitting.scale : fitting.scale);
@@ -51,7 +115,7 @@ export function normalizeWristModel(source: THREE.Object3D, fitting: ModelFittin
   return wrapper;
 }
 
-function worldVertices(root: THREE.Object3D): THREE.Vector3[] {
+export function worldVertices(root: THREE.Object3D): THREE.Vector3[] {
   root.updateMatrixWorld(true);
   const vertices: THREE.Vector3[] = [];
   root.traverse((object) => {
@@ -72,7 +136,7 @@ const ANGLE_BINS = 36;
  * Direction from the band's axis toward the watch case: going around a closed band, the case is
  * where the model is widest along the arm and sticks out furthest from the wrist.
  */
-function caseDirection(vertices: THREE.Vector3[], centre: THREE.Vector3, axis: THREE.Vector3): THREE.Vector3 {
+export function caseDirection(vertices: THREE.Vector3[], centre: THREE.Vector3, axis: THREE.Vector3): THREE.Vector3 {
   const e1 = new THREE.Vector3().crossVectors(axis, Math.abs(axis.x) < 0.9 ? AXES[0] : AXES[1]).normalize();
   const e2 = new THREE.Vector3().crossVectors(axis, e1);
   const minH = new Array(ANGLE_BINS).fill(Infinity);
@@ -169,13 +233,29 @@ export function stripLights(root: THREE.Object3D) {
   for (const light of lights) light.removeFromParent();
 }
 
+/**
+ * Gives smooth normals to meshes exported without them. three.js otherwise shades such meshes flat,
+ * which makes every triangle visible (common with re-exported and AI-generated models).
+ */
+export function repairMissingNormals(root: THREE.Object3D) {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || mesh.geometry.getAttribute('normal')) return;
+    mesh.geometry.computeVertexNormals();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if ('flatShading' in material && material.flatShading) {
+        material.flatShading = false;
+        material.needsUpdate = true;
+      }
+    }
+  });
+}
+
 const DRACO_DECODER_URL = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
 
-/**
- * Loads a .glb (Draco-compressed or not) and returns it wrapped in the wrist frame. Browser only.
- * Pass 'auto' to align it with `autoAlignRotation` instead of a saved fitting.
- */
-export async function loadWristModel(url: string, fitting: ModelFitting | 'auto'): Promise<THREE.Group> {
+/** Loads a .glb (Draco-compressed or not) with its baked-in lights removed. Browser only. */
+export async function loadGlbScene(url: string): Promise<THREE.Group> {
   const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
     import('three/examples/jsm/loaders/GLTFLoader.js'),
     import('three/examples/jsm/loaders/DRACOLoader.js'),
@@ -184,9 +264,23 @@ export async function loadWristModel(url: string, fitting: ModelFitting | 'auto'
   try {
     const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(url);
     stripLights(gltf.scene);
-    const resolved = fitting === 'auto' ? { ...DEFAULT_FITTING, rotation: autoAlignRotation(gltf.scene) } : fitting;
-    return normalizeWristModel(gltf.scene, resolved);
+    repairMissingNormals(gltf.scene);
+    return gltf.scene;
   } finally {
     draco.dispose();
   }
+}
+
+/**
+ * Loads a .glb and returns it wrapped in the wrist frame. Browser only.
+ * Pass 'auto' to align it with `autoAlignRotation` instead of a saved fitting.
+ */
+export async function loadWristModel(
+  url: string,
+  fitting: ModelFitting | 'auto',
+  item: WristItem = 'watch'
+): Promise<THREE.Group> {
+  const scene = await loadGlbScene(url);
+  const resolved = fitting === 'auto' ? { ...DEFAULT_FITTING, rotation: autoAlignRotation(scene) } : fitting;
+  return normalizeWristModel(scene, resolved, item);
 }

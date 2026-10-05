@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Box, CheckCircle2, Link as LinkIcon, Loader2, RotateCcw, RotateCw, UploadCloud, Wand2, X } from 'lucide-react';
 import type { Object3D } from 'three';
@@ -11,6 +11,8 @@ import {
   MAX_TRY_ON_MODEL_BYTES,
   TRY_ON_MODEL_ROUTE,
   type ModelFitting,
+  type TryOnPlacement,
+  type WristItem,
 } from '@/lib/try-on/tryOnModel';
 import type { ModelDimensions } from './GlbPreview';
 
@@ -31,7 +33,31 @@ interface GlbModelUploaderProps {
   onFittingChange: (fitting: ModelFitting) => void;
   required?: boolean;
   error?: string;
+  /** Where the product is worn; decides alignment, sizing and the preview guide. */
+  placement?: TryOnPlacement;
+  /** Wrist products only: a watch or a bracelet. */
+  wristItem?: WristItem;
 }
+
+const BRACELET_COPY = {
+  sized: ' · Sized automatically to fit the wrist',
+  check: 'Check the fit: the bracelet should go around the wrist guide. A bracelet modelled lying flat is wrapped around the wrist automatically; turn it so it lies flat and long across the view.',
+};
+
+const PLACEMENT_COPY: Record<TryOnPlacement, { sized: string; check: string }> = {
+  wrist: {
+    sized: ' · Sized automatically to fit the wrist',
+    check: 'Check the fit: the strap should wrap around the wrist guide with the dial facing you, as if worn on an upright arm.',
+  },
+  neck: {
+    sized: ' · Sized automatically to fit the neck',
+    check: 'Check the fit: the necklace should sit around the neck guide with the pendant at the front, facing you. A flat (front-view) model hangs from the top of its chain.',
+  },
+  ear: {
+    sized: ' · Sized automatically as an earring',
+    check: 'Check the fit: the earring should hang down from the earlobe guide with its front facing you. The top is where it attaches to the ear.',
+  },
+};
 
 const MAX_MB = MAX_TRY_ON_MODEL_BYTES / (1024 * 1024);
 
@@ -49,7 +75,10 @@ export const GlbModelUploader: React.FC<GlbModelUploaderProps> = ({
   onFittingChange,
   required,
   error,
+  placement = 'wrist',
+  wristItem = 'watch',
 }) => {
+  const copy = placement === 'wrist' && wristItem === 'bracelet' ? BRACELET_COPY : PLACEMENT_COPY[placement];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<'upload' | 'url'>('upload');
   const [isDragging, setIsDragging] = useState(false);
@@ -66,9 +95,24 @@ export const GlbModelUploader: React.FC<GlbModelUploaderProps> = ({
   const autoAlignPendingRef = useRef(false);
   const autoAlign = useCallback(async () => {
     if (!sceneRef.current) return;
-    const { autoAlignRotation } = await import('@/lib/try-on/ar/productModel');
-    onFittingChange({ ...DEFAULT_FITTING, rotation: autoAlignRotation(sceneRef.current) });
-  }, [onFittingChange]);
+    const rotation =
+      placement === 'ear'
+        ? await import('@/lib/try-on/ar/earringModel').then((m) =>
+            m.autoAlignEarringRotation(m.isolateSingleEarring(sceneRef.current!))
+          )
+        : placement === 'neck'
+          ? (await import('@/lib/try-on/ar/necklaceModel')).autoAlignNecklaceRotation(sceneRef.current)
+          : (await import('@/lib/try-on/ar/productModel')).autoAlignRotation(sceneRef.current);
+    onFittingChange({ ...DEFAULT_FITTING, rotation });
+  }, [onFittingChange, placement]);
+
+  // A wrist alignment is wrong for an earring and vice versa, so re-align when the category changes.
+  const previousPlacementRef = useRef(placement);
+  useEffect(() => {
+    if (previousPlacementRef.current === placement) return;
+    previousPlacementRef.current = placement;
+    autoAlign();
+  }, [placement, autoAlign]);
   const handleSceneLoaded = useCallback(
     (scene: Object3D) => {
       sceneRef.current = scene;
@@ -180,6 +224,8 @@ export const GlbModelUploader: React.FC<GlbModelUploaderProps> = ({
             <GlbPreview
               url={value}
               fitting={fitting}
+              placement={placement}
+              wristItem={wristItem}
               onDimensions={handleDimensions}
               onSceneLoaded={handleSceneLoaded}
               onError={(message) => setLocalError(message)}
@@ -192,7 +238,7 @@ export const GlbModelUploader: React.FC<GlbModelUploaderProps> = ({
               </span>
               <p className="truncate text-[11px] text-slate-500">
                 {fileName || (value.startsWith(TRY_ON_MODEL_ROUTE) ? 'Uploaded to Shopora' : value)}
-                {dimensions && ' · Sized automatically to fit the wrist'}
+                {dimensions && copy.sized}
               </p>
             </div>
             <button
@@ -206,8 +252,7 @@ export const GlbModelUploader: React.FC<GlbModelUploaderProps> = ({
           </div>
           <div className="space-y-2 border-t border-slate-100 bg-slate-50/70 p-3">
             <p className="text-[11px] font-semibold text-slate-700">
-              Check the fit: the strap should wrap around the wrist guide with the dial facing you, as if worn on an
-              upright arm.
+              {copy.check}
             </p>
             <div className="flex flex-wrap items-center gap-1.5">
               <button

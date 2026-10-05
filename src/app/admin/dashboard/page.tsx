@@ -542,38 +542,38 @@ function AdminDashboardContent() {
                       >
                         <div className="space-y-4 flex-1 flex flex-col justify-between">
                           {/* ROOT CATEGORY HEADER */}
-                          <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-base font-extrabold text-slate-900">{cat.name}</h3>
-                                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                          <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base font-extrabold text-slate-900 break-words leading-tight">{cat.name}</h3>
+                                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100 shrink-0 whitespace-nowrap">
                                   {cat._count?.products || 0} Products
                                 </span>
                               </div>
-                              <p className="text-[11px] font-mono text-slate-400 mt-0.5">slug: {cat.slug}</p>
+                              <p className="text-[11px] font-mono text-slate-400">slug: {cat.slug}</p>
                             </div>
 
                             {/* PARENT ACTIONS */}
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
                               <button
                                 onClick={() => handleOpenAddSubCategoryModal(cat)}
                                 title={`Add sub-category under ${cat.name}`}
-                                className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-xl transition-all active:scale-95 cursor-pointer"
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-xl transition-all active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
                               >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Sub Category</span>
+                                <Plus className="w-3.5 h-3.5 shrink-0" />
+                                <span className="whitespace-nowrap">Sub Category</span>
                               </button>
                               <button
                                 onClick={() => handleOpenEditModal(cat)}
                                 title="Edit Category & Fields"
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors shrink-0 flex items-center justify-center"
                               >
                                 <Edit2 className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleOpenDeleteModal(cat)}
                                 title="Delete Category"
-                                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0 flex items-center justify-center"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
@@ -608,16 +608,16 @@ function AdminDashboardContent() {
                                 {/* COLLAPSIBLE CONTENT */}
                                 {isExpanded && (
                                   <div className="pt-2 border-t border-slate-200/60 transition-all max-h-64 overflow-y-auto pr-1 space-y-3">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-center justify-between gap-2">
                                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                                         Sub-Categories List ({subCategories.length})
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => handleOpenAddSubCategoryModal(cat)}
-                                        className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200/80 transition-all cursor-pointer"
+                                        className="inline-flex items-center gap-1 text-[10px] font-extrabold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200/80 transition-all cursor-pointer whitespace-nowrap shrink-0"
                                       >
-                                        <Plus className="w-3 h-3" />
+                                        <Plus className="w-3 h-3 shrink-0" />
                                         <span>Add Sub-Category</span>
                                       </button>
                                     </div>
@@ -633,14 +633,14 @@ function AdminDashboardContent() {
                                             key={sub.id}
                                             className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-2"
                                           >
-                                            <div className="flex items-center justify-between gap-2">
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-extrabold text-xs text-slate-900">{sub.name}</span>
-                                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                                            <div className="flex items-start justify-between gap-2">
+                                              <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
+                                                <span className="font-extrabold text-xs text-slate-900 break-words">{sub.name}</span>
+                                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 shrink-0 whitespace-nowrap">
                                                   {sub._count?.products || 0} Products
                                                 </span>
                                               </div>
-                                              <div className="flex items-center gap-1">
+                                              <div className="flex items-center gap-1 shrink-0">
                                                 <button
                                                   onClick={() => handleOpenEditModal(sub)}
                                                   title={`Edit ${sub.name}`}
@@ -684,18 +684,18 @@ function AdminDashboardContent() {
                                               const childSubCategories = categories.filter((c) => c.parentId === sub.id);
                                               return (
                                                 <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                                                  <div className="flex items-center justify-between">
+                                                  <div className="flex items-center justify-between gap-2">
                                                     <span className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1">
-                                                      <CornerDownRight className="w-3 h-3 text-indigo-500" />
+                                                      <CornerDownRight className="w-3 h-3 text-indigo-500 shrink-0" />
                                                       Nested ({childSubCategories.length})
                                                     </span>
                                                     <button
                                                       type="button"
                                                       onClick={() => handleOpenAddSubCategoryModal(sub)}
-                                                      className="text-[9px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200/80 transition-all flex items-center gap-0.5 cursor-pointer"
+                                                      className="text-[9px] font-extrabold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200/80 transition-all flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
                                                     >
-                                                      <Plus className="w-2.5 h-2.5" />
-                                                      <span>+ Sub</span>
+                                                      <Plus className="w-2.5 h-2.5 shrink-0" />
+                                                      <span>Sub</span>
                                                     </button>
                                                   </div>
 
@@ -704,13 +704,13 @@ function AdminDashboardContent() {
                                                       {childSubCategories.map((childSub) => (
                                                         <div
                                                           key={childSub.id}
-                                                          className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between"
+                                                          className="p-2 bg-slate-50 border border-slate-200/80 rounded-lg text-xs flex items-center justify-between gap-2"
                                                         >
-                                                          <div className="flex items-center gap-1.5">
-                                                            <span className="font-bold text-slate-800 text-[11px]">{childSub.name}</span>
-                                                            <span className="text-[9px] text-slate-400 font-mono">({childSub.slug})</span>
+                                                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                            <span className="font-bold text-slate-800 text-[11px] truncate">{childSub.name}</span>
+                                                            <span className="text-[9px] text-slate-400 font-mono shrink-0">({childSub.slug})</span>
                                                           </div>
-                                                          <div className="flex items-center gap-1">
+                                                          <div className="flex items-center gap-1 shrink-0">
                                                             <button
                                                               onClick={() => handleOpenEditModal(childSub)}
                                                               className="p-1 text-slate-400 hover:text-indigo-600 rounded"
@@ -746,7 +746,7 @@ function AdminDashboardContent() {
                           {/* PARENT DYNAMIC FORM FIELDS FIXED HEIGHT CONTAINER */}
                           <div className="pt-2 space-y-2">
                             <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                              <Layers className="w-3.5 h-3.5 text-indigo-600" /> Parent Category Dynamic Fields ({cat.fields?.length || 0}):
+                              <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" /> Parent Category Dynamic Fields ({cat.fields?.length || 0}):
                             </span>
 
                             <div className="h-28 flex flex-col justify-start overflow-y-auto pr-1 border border-slate-100/80 rounded-2xl p-2.5 bg-slate-50/50">
@@ -759,14 +759,14 @@ function AdminDashboardContent() {
                                   {cat.fields.map((f, i) => (
                                     <div
                                       key={i}
-                                      className="p-2 bg-white rounded-xl text-[11px] flex items-center justify-between border border-slate-200/80 shadow-2xs"
+                                      className="p-2 bg-white rounded-xl text-[11px] flex items-center justify-between gap-2 border border-slate-200/80 shadow-2xs"
                                     >
-                                      <span className="font-bold text-slate-800">
+                                      <span className="font-bold text-slate-800 truncate" title={f.label}>
                                         {f.label}
                                         {f.required && <span className="text-rose-500 font-extrabold ml-1">*</span>}
                                       </span>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="uppercase text-[9px] font-extrabold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <span className="uppercase text-[9px] font-extrabold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded whitespace-nowrap">
                                           {f.type}
                                         </span>
                                       </div>

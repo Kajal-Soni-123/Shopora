@@ -6,9 +6,11 @@ import { Bounds, OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Loader2 } from 'lucide-react';
-import { normalizeWristModel, stripLights } from '@/lib/try-on/ar/productModel';
+import { normalizeWristModel, repairMissingNormals, stripLights } from '@/lib/try-on/ar/productModel';
+import { isolateSingleEarring, normalizeEarringModel } from '@/lib/try-on/ar/earringModel';
+import { isClosedNecklace, NECK_RADIUS_X, NECK_RADIUS_Z, normalizeNecklaceModel } from '@/lib/try-on/ar/necklaceModel';
 import { WRIST_RADIUS_X, WRIST_RADIUS_Z } from '@/lib/try-on/ar/wristScene';
-import type { ModelFitting } from '@/lib/try-on/tryOnModel';
+import type { ModelFitting, TryOnPlacement, WristItem } from '@/lib/try-on/tryOnModel';
 
 export interface ModelDimensions {
   x: number;
@@ -19,6 +21,8 @@ export interface ModelDimensions {
 interface GlbPreviewProps {
   url: string;
   fitting: ModelFitting;
+  placement?: TryOnPlacement;
+  wristItem?: WristItem;
   /** Receives the model as loaded, before alignment, e.g. to auto-align it. */
   onSceneLoaded?: (scene: THREE.Object3D) => void;
   onDimensions?: (dimensions: ModelDimensions) => void;
@@ -84,14 +88,47 @@ function WristGuide() {
   );
 }
 
+/** A real-size translucent earlobe at the attachment point, so the vendor can judge size and hang. */
+function EarlobeGuide() {
+  return (
+    <mesh position={[0, 0.002, -0.004]} scale={[0.008, 0.011, 0.004]}>
+      <sphereGeometry args={[1, 32, 16]} />
+      <meshStandardMaterial color="#e8b99a" roughness={0.8} transparent opacity={0.45} depthWrite={false} />
+    </mesh>
+  );
+}
+
+/**
+ * A real-size translucent neck. A closed necklace wraps it; a flat (front-view) one hangs in front,
+ * from the top of its chain.
+ */
+function NeckGuide({ closed }: { closed: boolean }) {
+  const geometry = useMemo(() => {
+    const cylinder = new THREE.CylinderGeometry(1, 1, 0.12, 48, 1, true);
+    cylinder.scale(NECK_RADIUS_X, 1, NECK_RADIUS_Z);
+    cylinder.translate(0, 0.05, closed ? 0 : -NECK_RADIUS_Z - 0.005);
+    return cylinder;
+  }, [closed]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color="#e8b99a" roughness={0.8} transparent opacity={0.35} side={THREE.DoubleSide} depthWrite={false} />
+    </mesh>
+  );
+}
+
 function Model({
   url,
   fitting,
+  placement,
+  wristItem,
   onDimensions,
   onSceneLoaded,
 }: {
   url: string;
   fitting: ModelFitting;
+  placement: TryOnPlacement;
+  wristItem: WristItem;
   onDimensions?: (dimensions: ModelDimensions) => void;
   onSceneLoaded?: (scene: THREE.Object3D) => void;
 }) {
@@ -105,18 +142,34 @@ function Model({
   const model = useMemo(() => {
     const copy = scene.clone(true);
     stripLights(copy);
-    return normalizeWristModel(copy, fitting);
-  }, [scene, fittingKey]);
+    repairMissingNormals(copy);
+    if (placement === 'ear') return normalizeEarringModel(isolateSingleEarring(copy), fitting);
+    if (placement === 'neck') return normalizeNecklaceModel(copy, fitting);
+    return normalizeWristModel(copy, fitting, wristItem);
+  }, [scene, fittingKey, placement, wristItem]);
 
   useEffect(() => {
     const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
     onDimensions?.({ x: size.x, y: size.y, z: size.z });
   }, [model, onDimensions]);
 
-  return <primitive object={model} />;
+  return (
+    <>
+      {placement === 'neck' && <NeckGuide closed={isClosedNecklace(model)} />}
+      <primitive object={model} />
+    </>
+  );
 }
 
-export default function GlbPreview({ url, fitting, onDimensions, onError, onSceneLoaded }: GlbPreviewProps) {
+export default function GlbPreview({
+  url,
+  fitting,
+  placement = 'wrist',
+  wristItem = 'watch',
+  onDimensions,
+  onError,
+  onSceneLoaded,
+}: GlbPreviewProps) {
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const handleDimensions = useCallback(
     (dimensions: ModelDimensions) => {
@@ -135,8 +188,8 @@ export default function GlbPreview({ url, fitting, onDimensions, onError, onScen
           <directionalLight position={[2, 3, 4]} intensity={1.2} />
           <Suspense fallback={null}>
             <Bounds fit clip observe margin={1.15}>
-              <WristGuide />
-              <Model url={url} fitting={fitting} onDimensions={handleDimensions} onSceneLoaded={onSceneLoaded} />
+              {placement === 'ear' ? <EarlobeGuide /> : placement === 'wrist' ? <WristGuide /> : null}
+              <Model url={url} fitting={fitting} placement={placement} wristItem={wristItem} onDimensions={handleDimensions} onSceneLoaded={onSceneLoaded} />
             </Bounds>
           </Suspense>
           <OrbitControls makeDefault enablePan={false} />

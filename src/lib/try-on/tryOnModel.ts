@@ -66,18 +66,57 @@ export function parseFitting(raw: unknown): ModelFitting {
   return { rotation, scale };
 }
 
-const WRIST_TYPES = new Set(['WATCH', 'BRACELET']);
-const WRIST_KEYWORDS = /\b(watch|watches|wristwatch|smartwatch|bracelet|bangle|cuff|wristband)\b/i;
+/** Where on the body the 3D try-on places a product. */
+export type TryOnPlacement = 'wrist' | 'ear' | 'neck';
+
+const PLACEMENT_BY_TYPE: Record<string, TryOnPlacement> = {
+  WATCH: 'wrist',
+  BRACELET: 'wrist',
+  EARRINGS: 'ear',
+  NECKLACE: 'neck',
+};
+const WRIST_KEYWORDS = /\b(watch|watches|wristwatch|smartwatch|bracelets?|bangles?|cuffs?|wristbands?|kadas?|kadda)\b/i;
+const WATCH_KEYWORDS = /\b(watch|watches|wristwatch|smartwatch|chronograph|timepiece)\b/i;
+const NECK_KEYWORDS = /\b(necklaces?|pendants?|lockets?|chokers?|mangalsutras?|chains?)\b/i;
+const EAR_KEYWORDS = /\b(earrings?|ear ?cuffs?|studs?|hoops?|jhumkas?|jhumkis?|danglers?|drops? earrings?)\b/i;
 
 /**
- * Whether the 3D try-on can place this product. Only wrist items are supported for now.
+ * Where the 3D try-on places this product, or null when it can't be tried on.
  * The vendor's try-on category wins; otherwise the title and category name decide.
  */
-export function supportsWristTryOn(product: {
+export function getTryOnPlacement(product: {
   tryOnCategory?: string | null;
   title?: string;
   category?: { name?: string } | null;
-}): boolean {
-  if (product.tryOnCategory) return WRIST_TYPES.has(product.tryOnCategory.toUpperCase());
-  return WRIST_KEYWORDS.test(`${product.title || ''} ${product.category?.name || ''}`);
+}): TryOnPlacement | null {
+  if (product.tryOnCategory) return PLACEMENT_BY_TYPE[product.tryOnCategory.toUpperCase()] ?? null;
+  const text = `${product.title || ''} ${product.category?.name || ''}`;
+  // Earrings first: "ear cuff" must not match the wrist "cuff".
+  if (EAR_KEYWORDS.test(text)) return 'ear';
+  // Wrist before neck: "chain bracelet" is a bracelet.
+  if (WRIST_KEYWORDS.test(text)) return 'wrist';
+  if (NECK_KEYWORDS.test(text)) return 'neck';
+  return null;
 }
+
+export function supportsTryOn(product: Parameters<typeof getTryOnPlacement>[0]): boolean {
+  return getTryOnPlacement(product) !== null;
+}
+
+/** Whether the 3D try-on places this product on the wrist. */
+export function supportsWristTryOn(product: Parameters<typeof getTryOnPlacement>[0]): boolean {
+  return getTryOnPlacement(product) === 'wrist';
+}
+
+/** What kind of wrist item: decides sizing (a watch face vs a band all round) and the watch-only extras. */
+export type WristItem = 'watch' | 'bracelet';
+
+export function getWristItem(product: Parameters<typeof getTryOnPlacement>[0]): WristItem {
+  const type = product.tryOnCategory?.toUpperCase();
+  if (type === 'BRACELET') return 'bracelet';
+  if (type === 'WATCH') return 'watch';
+  return WATCH_KEYWORDS.test(`${product.title || ''} ${product.category?.name || ''}`) ? 'watch' : 'bracelet';
+}
+
+export const TRY_ON_UNSUPPORTED_MESSAGE =
+  'Try On Yourself currently works for watches, bracelets, earrings and necklaces. Set the Try-On Category to one of those.';

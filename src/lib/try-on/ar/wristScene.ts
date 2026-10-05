@@ -54,9 +54,12 @@ export function createContactShadows({ bandWidth, caseRadius }: { bandWidth: num
   band.scale(WRIST_RADIUS_X + 0.0003, 1, WRIST_RADIUS_Z + 0.0003);
   group.add(shadowMesh(band, false));
 
-  const patch = new THREE.PlaneGeometry(caseRadius * 2.8, caseRadius * 2.8);
-  patch.translate(0, 0, WRIST_RADIUS_Z + 0.0004);
-  group.add(shadowMesh(patch, true));
+  // Watches only: a bracelet has no case to cast a patch of shadow.
+  if (caseRadius > 0) {
+    const patch = new THREE.PlaneGeometry(caseRadius * 2.8, caseRadius * 2.8);
+    patch.translate(0, 0, WRIST_RADIUS_Z + 0.0004);
+    group.add(shadowMesh(patch, true));
+  }
 
   return group;
 }
