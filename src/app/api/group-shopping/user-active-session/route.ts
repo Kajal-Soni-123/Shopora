@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // Look up any active non-expired session where user is host or member
     const session = await prisma.groupShoppingSession.findFirst({
       where: {
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'WAITING_FOR_PAYMENTS'] },
         expiresAt: { gt: new Date() },
         OR: [
           { hostUserId: currentUser.userId },

@@ -59,6 +59,8 @@ const statusConfig: Record<string, { label: string; color: string; icon: React.R
 };
 
 import { OrderCardSkeleton } from '@/components/common/Skeleton';
+import { displayableAttributes } from '@/lib/utils';
+import { ReviewPhotoPicker } from '@/components/common/ReviewPhotoPicker';
 
 interface ReviewProductTarget {
   id: string;
@@ -81,6 +83,7 @@ export default function OrdersListPage() {
   const [userRating, setUserRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [commentText, setCommentText] = useState<string>('');
+  const [reviewPhotos, setReviewPhotos] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [reviewError, setReviewError] = useState<string>('');
   const [reviewSuccess, setReviewSuccess] = useState<string>('');
@@ -90,6 +93,7 @@ export default function OrdersListPage() {
     setUserRating(5);
     setHoverRating(0);
     setCommentText('');
+    setReviewPhotos([]);
     setReviewError('');
     setReviewSuccess('');
   };
@@ -118,6 +122,7 @@ export default function OrdersListPage() {
           productId: reviewTarget.id,
           rating: userRating,
           comment: commentText.trim(),
+          images: reviewPhotos,
         }),
       });
 
@@ -406,7 +411,7 @@ export default function OrdersListPage() {
                         {allOrderItems.map((item, idx) => {
                           const product = item.product;
                           const attributes = product?.attributes || {};
-                          const attributeEntries = Object.entries(attributes);
+                          const attributeEntries = displayableAttributes(attributes);
 
                           return (
                             <div
@@ -602,6 +607,8 @@ export default function OrdersListPage() {
                     className="w-full p-3.5 rounded-2xl text-xs bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-medium text-slate-900"
                   />
                 </div>
+
+                <ReviewPhotoPicker photos={reviewPhotos} onChange={setReviewPhotos} />
 
                 <div className="flex items-center justify-end gap-3 pt-2">
                   <button

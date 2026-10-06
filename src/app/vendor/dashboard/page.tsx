@@ -55,9 +55,10 @@ export default function VendorDashboardPage() {
   // Fulfillment State
   const [fulfillingId, setFulfillingId] = useState<string | null>(null);
 
-  const fetchVendorData = async () => {
+  // silent: refresh in the background without the full-page loading state
+  const fetchVendorData = async (options?: { silent?: boolean }) => {
     try {
-      setLoadingData(true);
+      if (options?.silent !== true) setLoadingData(true);
       const [resProducts, resOrders, resRequests, resReturns] = await Promise.all([
         fetch('/api/vendor/products'),
         fetch('/api/vendor/orders'),
@@ -372,6 +373,7 @@ export default function VendorDashboardPage() {
             loadingData={loadingData}
             onUpdateStatus={handleUpdateStatus}
             updatingId={fulfillingId}
+            onRefresh={() => fetchVendorData({ silent: true })}
           />
         )}
 

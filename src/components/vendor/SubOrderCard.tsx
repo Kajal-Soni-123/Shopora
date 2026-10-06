@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import {
   Truck,
@@ -19,9 +19,13 @@ import {
   CalendarDays,
   ExternalLink,
   Zap,
+  FlaskConical,
+  Bike,
+  KeyRound,
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, displayableAttributes } from '@/lib/utils';
 import { getColorStyle } from '@/lib/color-utils';
+import { COURIER_SIMULATOR_ENABLED, STEP_DETAILS, nextCourierStep } from '@/lib/shipping/simulator';
 
 export interface VendorSubOrderData {
   id: string;
@@ -60,6 +64,7 @@ export interface VendorSubOrderData {
     customerEmail: string;
     shippingAddress: string;
     paymentStatus: string;
+    paymentMethod?: string;
   };
   items: {
     id: string;
@@ -84,6 +89,8 @@ interface SubOrderCardProps {
     note?: string
   ) => Promise<void>;
   isUpdating: boolean;
+  /** Reload vendor orders after a shipment step changes the sub-order status */
+  onRefresh?: () => Promise<void> | void;
 }
 
 const statusOptions = [
@@ -101,16 +108,67 @@ export const SubOrderCard: React.FC<SubOrderCardProps> = ({
   subOrder,
   onUpdateStatus,
   isUpdating,
+  onRefresh,
 }) => {
   const [isCreatingShipment, setIsCreatingShipment] = useState(false);
   const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
   const [isSchedulingPickup, setIsSchedulingPickup] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [localShipments, setLocalShipments] = useState(subOrder.shipments || []);
+  const [isDeliveryBusy, setIsDeliveryBusy] = useState(false);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [otpInput, setOtpInput] = useState('');
+  const [cashCollected, setCashCollected] = useState(false);
+
+  // Keep in sync when the dashboard reloads orders
+  useEffect(() => {
+    setLocalShipments(subOrder.shipments || []);
+  }, [subOrder.shipments]);
 
   const activeShipment = localShipments.find((s) => s.status !== 'CANCELLED');
   const currentStatusConfig =
     statusOptions.find((s) => s.value === subOrder.status) || statusOptions[0];
+
+  /** Shared runner for simulator / self-delivery calls that return the updated shipment */
+  const runDeliveryAction = async (url: string, body: Record<string, unknown>) => {
+    setIsDeliveryBusy(true);
+    setDeliveryError(null);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setDeliveryError(data.error || data.message || 'Something went wrong. Please try again.');
+        return;
+      }
+      setLocalShipments((prev) => [data.data, ...prev.filter((s) => s.id !== data.data.id)]);
+      setOtpInput('');
+      await onRefresh?.();
+    } catch (err) {
+      console.error('Delivery action error:', err);
+      setDeliveryError('Something went wrong. Please try again.');
+    } finally {
+      setIsDeliveryBusy(false);
+    }
+  };
+
+  const simulateCourier = (mode: 'NEXT' | 'DELIVER') =>
+    activeShipment && runDeliveryAction(`/api/shipments/${activeShipment.id}/simulate`, { mode });
+
+  const selfDelivery = (action: 'DISPATCH' | 'OUT_FOR_DELIVERY' | 'DELIVER') =>
+    runDeliveryAction(`/api/fulfillments/${subOrder.id}/self-delivery`, {
+      action,
+      otp: otpInput.trim(),
+      cashCollected,
+    });
+
+  const isSelfDelivery = activeShipment?.provider === 'self';
+  const isCod = subOrder.order.paymentMethod === 'COD';
+  const simulatorNext =
+    COURIER_SIMULATOR_ENABLED && activeShipment?.provider === 'mock' ? nextCourierStep(activeShipment.status) : null;
 
   const handleNextFulfillmentStep = async (nextStatus: string) => {
     await onUpdateStatus(subOrder.id, nextStatus, subOrder.trackingNumber || '', subOrder.shippingCarrier || 'Mock Express');
@@ -249,7 +307,7 @@ export const SubOrderCard: React.FC<SubOrderCardProps> = ({
           {subOrder.items.map((item) => {
             const product = item.product;
             const attributes = product?.attributes || {};
-            const attributeEntries = Object.entries(attributes);
+            const attributeEntries = displayableAttributes(attributes);
 
             return (
               <div
@@ -376,8 +434,20 @@ export const SubOrderCard: React.FC<SubOrderCardProps> = ({
             </button>
           )}
 
-          {/* Actions when active Shipment exists */}
-          {activeShipment && (
+          {(subOrder.status === 'PACKED' || subOrder.status === 'CONFIRMED' || subOrder.status === 'PROCESSING') && !activeShipment && (
+            <button
+              onClick={() => selfDelivery('DISPATCH')}
+              disabled={isDeliveryBusy}
+              title="Skip the courier and deliver this package yourself"
+              className="px-4 py-2 rounded-xl bg-white text-emerald-700 font-extrabold text-xs border border-emerald-300 hover:bg-emerald-50 transition-all flex items-center gap-1.5"
+            >
+              {isDeliveryBusy ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bike className="w-3.5 h-3.5" />}
+              Deliver it myself
+            </button>
+          )}
+
+          {/* Courier actions (label + pickup) — not needed when the seller delivers */}
+          {activeShipment && !isSelfDelivery && (
             <>
               <button
                 onClick={handleGenerateLabel}
@@ -392,7 +462,7 @@ export const SubOrderCard: React.FC<SubOrderCardProps> = ({
                 {activeShipment.labelUrl ? 'View Shipping Label' : 'Generate Label'}
               </button>
 
-              {activeShipment.status !== 'PICKUP_SCHEDULED' && activeShipment.status !== 'DELIVERED' && (
+              {['CREATED', 'LABEL_GENERATED'].includes(activeShipment.status) && (
                 <button
                   onClick={handleSchedulePickup}
                   disabled={isSchedulingPickup}
@@ -410,16 +480,98 @@ export const SubOrderCard: React.FC<SubOrderCardProps> = ({
           )}
         </div>
 
+        {deliveryError && (
+          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {deliveryError}
+          </div>
+        )}
+
+        {/* Dev-only: play the courier's part for mock shipments */}
+        {simulatorNext && (
+          <div className="p-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-amber-800 flex items-center gap-1.5">
+              <FlaskConical className="w-3.5 h-3.5" />
+              Courier simulator (testing only) — no real courier is connected
+            </span>
+            <span className="flex gap-2">
+              <button
+                onClick={() => simulateCourier('NEXT')}
+                disabled={isDeliveryBusy}
+                className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 font-bold hover:bg-amber-100"
+              >
+                Next: {STEP_DETAILS[simulatorNext]?.label}
+              </button>
+              {simulatorNext !== 'DELIVERED' && (
+                <button
+                  onClick={() => simulateCourier('DELIVER')}
+                  disabled={isDeliveryBusy}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700"
+                >
+                  Deliver now
+                </button>
+              )}
+            </span>
+          </div>
+        )}
+
+        {/* Seller self-delivery steps */}
+        {isSelfDelivery && activeShipment && ['IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(activeShipment.status) && (
+          <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70 space-y-2.5 text-xs">
+            <p className="font-bold text-emerald-800 flex items-center gap-1.5">
+              <Bike className="w-3.5 h-3.5" />
+              You&apos;re delivering this order yourself
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {activeShipment.status === 'IN_TRANSIT' && (
+                <button
+                  onClick={() => selfDelivery('OUT_FOR_DELIVERY')}
+                  disabled={isDeliveryBusy}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 font-bold hover:bg-emerald-100"
+                >
+                  Mark out for delivery
+                </button>
+              )}
+              <span className="flex items-center gap-1.5 bg-white border border-emerald-300 rounded-lg px-2 py-1">
+                <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
+                <input
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="Customer's 6-digit code"
+                  inputMode="numeric"
+                  className="w-40 outline-none font-mono font-bold text-slate-900 placeholder:font-sans placeholder:font-medium"
+                />
+              </span>
+              {isCod && (
+                <label className="flex items-center gap-1.5 font-bold text-emerald-900">
+                  <input type="checkbox" checked={cashCollected} onChange={(e) => setCashCollected(e.target.checked)} />
+                  Cash collected
+                </label>
+              )}
+              <button
+                onClick={() => selfDelivery('DELIVER')}
+                disabled={isDeliveryBusy || otpInput.length !== 6 || (isCod && !cashCollected)}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                Mark as delivered
+              </button>
+            </div>
+            <p className="text-[11px] text-emerald-700">
+              The customer sees the delivery code on their order page — ask for it when you hand over the package.
+            </p>
+          </div>
+        )}
+
         {/* Active Shipment Info Badge */}
         {activeShipment && (
           <div className="p-3 rounded-xl bg-white border border-indigo-100 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-slate-900">Courier:</span>
               <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold uppercase text-[11px]">
-                {activeShipment.provider}
+                {isSelfDelivery ? 'Seller delivery' : activeShipment.provider}
               </span>
               <span className="text-slate-400">|</span>
-              <span className="font-extrabold text-slate-900">AWB:</span>
+              <span className="font-extrabold text-slate-900">{isSelfDelivery ? 'Ref:' : 'AWB:'}</span>
               <span className="font-mono text-indigo-700 font-bold">{activeShipment.awbNumber || 'Pending'}</span>
             </div>
 

@@ -5,11 +5,14 @@ import Image from 'next/image';
 import { Star, Send, Loader2, MessageSquare, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Flyout } from '@/components/common/Flyout';
+import { ReviewPhotoPicker } from '@/components/common/ReviewPhotoPicker';
+import { ReviewPhotos } from '@/components/common/ReviewPhotos';
 
 interface Review {
   id: string;
   rating: number;
   comment: string;
+  images?: string[];
   createdAt: string;
   user: {
     id: string;
@@ -44,6 +47,7 @@ export function ProductReviewsModal({
   const [rating, setRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
   const [comment, setComment] = useState('');
+  const [reviewPhotos, setReviewPhotos] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -95,6 +99,7 @@ export function ProductReviewsModal({
           productId,
           rating,
           comment: comment.trim(),
+          images: reviewPhotos,
         }),
       });
 
@@ -105,6 +110,7 @@ export function ProductReviewsModal({
       } else {
         setSuccessMsg('Thank you! Your review and comment have been posted.');
         setComment('');
+        setReviewPhotos([]);
         setRating(5);
         fetchProductReviews();
         if (onReviewSubmitted) onReviewSubmitted();
@@ -206,6 +212,8 @@ export function ProductReviewsModal({
               />
             </div>
 
+            <ReviewPhotoPicker photos={reviewPhotos} onChange={setReviewPhotos} />
+
             <div className="flex items-center justify-between">
               {!user ? (
                 <p className="text-[11px] text-indigo-600 font-semibold">
@@ -273,6 +281,7 @@ export function ProductReviewsModal({
                     </div>
                   </div>
                   <p className="text-xs text-slate-700 font-medium leading-relaxed">{r.comment}</p>
+                  <ReviewPhotos images={r.images} size="sm" />
                   <span className="text-[10px] text-slate-400 font-semibold block">
                     {new Date(r.createdAt).toLocaleDateString('en-US', {
                       year: 'numeric',

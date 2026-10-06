@@ -19,11 +19,13 @@ import {
   Award,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { ReviewPhotos } from '@/components/common/ReviewPhotos';
 
 interface ReviewItem {
   id: string;
   rating: number;
   comment: string;
+  images?: string[];
   createdAt: string;
   user: {
     id: string;
@@ -544,6 +546,7 @@ export function VendorReviewsSection() {
                 <p className="text-xs font-medium text-slate-700 bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/60 leading-relaxed">
                   "{rev.comment}"
                 </p>
+                <ReviewPhotos images={rev.images} size="sm" />
               </div>
             ))}
           </div>

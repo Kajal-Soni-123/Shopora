@@ -82,11 +82,11 @@ export function ProductSuggestionCard({ message }: ProductSuggestionCardProps) {
                 <button
                   key={idx}
                   onClick={async () => {
-                    if (typeof window !== 'undefined') {
+                    if (typeof window !== 'undefined' && /skin|cloth|fashion|jewel|accessor|appliance|tech|furniture/i.test(p.rawLabel)) {
                       let cleanedQuery = p.query;
                       if (/skincare/i.test(cleanedQuery)) cleanedQuery = 'skincare';
                       else if (/clothes|fashion/i.test(cleanedQuery)) cleanedQuery = 'clothes';
-                      else if (/jewelry|accessory/i.test(cleanedQuery)) cleanedQuery = 'jewelry';
+                      else if (/jewel|accessory/i.test(cleanedQuery)) cleanedQuery = 'jewellery';
                       else if (/appliance|tech/i.test(cleanedQuery)) cleanedQuery = 'appliances';
 
                       const url = new URL(window.location.href);
@@ -94,7 +94,7 @@ export function ProductSuggestionCard({ message }: ProductSuggestionCardProps) {
                       window.history.pushState({}, '', url.toString());
                       window.dispatchEvent(new CustomEvent('shopora_search_sync', { detail: { query: cleanedQuery } }));
                     }
-                    await askGenie(`suggest ${p.query} gifts`);
+                    await askGenie(p.rawLabel);
                   }}
                   className="flex items-center justify-center text-center px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 shadow-xs hover:shadow transition-all duration-200 cursor-pointer active:scale-95"
                 >
@@ -120,7 +120,7 @@ export function ProductSuggestionCard({ message }: ProductSuggestionCardProps) {
 
   // Determine current member's vote with legacy fallback mapping
   const savedMemberId = typeof window !== 'undefined' ? localStorage.getItem(`shopora_group_member_${activeSession?.code}`) : null;
-  const effectiveMemberId = activeMember?.id || savedMemberId || activeSession?.members?.[0]?.id;
+  const effectiveMemberId = activeMember?.id || savedMemberId;
 
   let rawMyVote = effectiveMemberId ? votes[effectiveMemberId] : null;
   if (rawMyVote === 'YES' || rawMyVote === 'LOVE') rawMyVote = 'BUY';
@@ -162,6 +162,9 @@ export function ProductSuggestionCard({ message }: ProductSuggestionCardProps) {
     setLocalVotes(nextVotes);
 
     await toggleVote(message.id, optionCode);
+    // Optimistic state is only for the in-flight request; afterwards use the polled
+    // server votes so everyone's votes (not just ours) keep showing up.
+    setLocalVotes(null);
   };
 
   const handleAddToCart = async () => {

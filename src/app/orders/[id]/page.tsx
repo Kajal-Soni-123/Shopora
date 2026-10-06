@@ -40,6 +40,8 @@ import { getColorStyle } from '@/lib/color-utils';
 import { CancelOrderModal } from '@/components/CancelOrderModal';
 import { ReturnItemModal } from '@/components/ReturnItemModal';
 import { ReturnTimeline } from '@/components/ReturnTimeline';
+import { displayableAttributes } from '@/lib/utils';
+import { ReviewPhotoPicker } from '@/components/common/ReviewPhotoPicker';
 
 interface ReviewProductTarget {
   id: string;
@@ -71,6 +73,7 @@ interface ExtendedSubOrder extends SubOrder {
     pickupScheduledAt?: string;
     pickedUpAt?: string;
     deliveredAt?: string;
+    deliveryOtp?: string; // seller self-delivery: only sent to the order's own customer
     trackingEvents?: {
       id: string;
       status: string;
@@ -116,7 +119,7 @@ function TrackingTimeline({ sub }: TrackingTimelineProps) {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black tracking-wider uppercase">
-                {activeShipment.provider} EXPRESS
+                {activeShipment.provider === 'self' ? 'SELLER DELIVERY' : `${activeShipment.provider} EXPRESS`}
               </span>
               <span className="font-mono text-xs font-bold text-indigo-900">
                 AWB: {activeShipment.awbNumber || 'Generating...'}
@@ -149,6 +152,21 @@ function TrackingTimeline({ sub }: TrackingTimelineProps) {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Seller self-delivery: the customer hands this code over when the package arrives */}
+      {activeShipment?.deliveryOtp && (
+        <div className="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3">
+          <div>
+            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Your delivery code</p>
+            <p className="text-xs text-emerald-800 font-medium">
+              The seller is delivering this personally. Share this code only when you receive your package.
+            </p>
+          </div>
+          <span className="font-mono text-xl font-black tracking-[0.3em] text-emerald-800 bg-white border border-emerald-200 rounded-xl px-3 py-1.5 shrink-0">
+            {activeShipment.deliveryOtp}
+          </span>
         </div>
       )}
 
@@ -373,6 +391,7 @@ export default function OrderDetailsPage() {
   const [userRating, setUserRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [commentText, setCommentText] = useState<string>('');
+  const [reviewPhotos, setReviewPhotos] = useState<string[]>([]);
   const [isSubmittingReview, setIsSubmittingReview] = useState<boolean>(false);
   const [reviewError, setReviewError] = useState<string>('');
   const [reviewSuccess, setReviewSuccess] = useState<string>('');
@@ -382,6 +401,7 @@ export default function OrderDetailsPage() {
     setUserRating(5);
     setHoverRating(0);
     setCommentText('');
+    setReviewPhotos([]);
     setReviewError('');
     setReviewSuccess('');
   };
@@ -410,6 +430,7 @@ export default function OrderDetailsPage() {
           productId: reviewTarget.id,
           rating: userRating,
           comment: commentText.trim(),
+          images: reviewPhotos,
         }),
       });
 
@@ -723,7 +744,7 @@ export default function OrderDetailsPage() {
                     {sub.items.map((item: any, itemIdx: number) => {
                       const product = item.product;
                       const attributes = product?.attributes || {};
-                      const attributeEntries = Object.entries(attributes);
+                      const attributeEntries = displayableAttributes(attributes);
                       const isItemCancellable = isSubCancellable && item.status !== 'CANCELLED';
                       const isItemReturnable = sub.status === 'DELIVERED' && (!item.status || item.status === 'ACTIVE' || item.status === 'DELIVERED');
                       const hasReturnRequest = item.returnRequest;
@@ -966,6 +987,8 @@ export default function OrderDetailsPage() {
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 resize-none text-slate-900 font-medium placeholder:text-slate-400"
                   />
                 </div>
+
+                <ReviewPhotoPicker photos={reviewPhotos} onChange={setReviewPhotos} />
 
                 <div className="flex items-center justify-end gap-3 pt-2">
                   <button

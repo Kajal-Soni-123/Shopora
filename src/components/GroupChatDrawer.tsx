@@ -103,11 +103,21 @@ export function GroupChatDrawer() {
     }
   };
 
+  // Genie asked a question (gift finder in progress) and nobody has spoken since →
+  // a typed reply is an answer for Genie, not a group message
+  const lastMessage = messages[messages.length - 1];
+  const isGenieAwaitingReply =
+    !!activeSession?.genieState?.step &&
+    !!lastMessage &&
+    (lastMessage.sender?.guestEmail === 'genie@shopora.ai' || !!lastMessage.sender?.guestName?.includes('Genie'));
+
   // Automatic intent detection for natural shopping queries
   const isShoppingQuery = (text: string) => {
     const lower = text.toLowerCase().trim();
     return (
+      isGenieAwaitingReply ||
       lower.startsWith('@genie') ||
+      /\b(gifts?|gifting|present for)\b/i.test(lower) ||
       lower.startsWith('genie') ||
       /^(recommend|suggest|find|show me|looking for|search|cheapest|best rated|deals under|items under|\$)/i.test(lower) ||
       /\b(under \$|less than \$|below \$|which one should|what is the best)\b/i.test(lower)
@@ -140,6 +150,9 @@ export function GroupChatDrawer() {
     }
   };
 
+  const isCategoryPill = (label: string) =>
+    /skin|cloth|fashion|jewel|accessor|appliance|tech|furniture/i.test(label) && !/change budget|start over/i.test(label);
+
   const triggerMainPageSearch = (rawPrompt: string) => {
     if (typeof window === 'undefined') return;
     let cleanedQuery = rawPrompt
@@ -150,7 +163,7 @@ export function GroupChatDrawer() {
     // Map common category pill queries to clean catalog search terms
     if (/skincare/i.test(cleanedQuery)) cleanedQuery = 'skincare';
     else if (/clothes|fashion|wear|apparel/i.test(cleanedQuery)) cleanedQuery = 'clothes';
-    else if (/jewelry|accessory|accessories/i.test(cleanedQuery)) cleanedQuery = 'jewelry';
+    else if (/jewel|accessory|accessories/i.test(cleanedQuery)) cleanedQuery = 'jewellery';
     else if (/appliance|tech|gadget/i.test(cleanedQuery)) cleanedQuery = 'appliances';
 
     if (cleanedQuery) {
@@ -175,8 +188,8 @@ export function GroupChatDrawer() {
 
   const handleQuickGenie = async (prompt: string) => {
     setIsSending(true);
-    // Trigger main page search grid update ONLY when clicking category pillbox
-    triggerMainPageSearch(prompt);
+    // Update the main product grid only for category pills (not "Mom", "Birthday", "Under $50"...)
+    if (isCategoryPill(prompt)) triggerMainPageSearch(prompt);
     await askGenie(prompt);
     setIsSending(false);
   };
@@ -209,7 +222,7 @@ export function GroupChatDrawer() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                handleQuickGenie(`suggest ${pill.query} gifts`);
+                handleQuickGenie(pill.rawLabel);
               }}
               className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-extrabold bg-white hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 hover:border-indigo-600 shadow-2xs hover:shadow-md transition-all cursor-pointer text-center active:scale-95"
               title={`View ${pill.query} gift suggestions`}

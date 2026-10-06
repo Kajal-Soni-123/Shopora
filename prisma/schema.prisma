@@ -156,6 +156,7 @@ model Review {
   id        String   @id @default(cuid())
   rating    Int      @default(5)
   comment   String
+  images    String[] @default([]) // Optional customer photos (compressed image data URLs, max 4)
   userId    String   @map("user_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   productId String   @map("product_id")
@@ -235,6 +236,7 @@ model Shipment {
   pickupScheduledAt  DateTime?       @map("pickup_scheduled_at")
   pickedUpAt         DateTime?       @map("picked_up_at")
   deliveredAt        DateTime?       @map("delivered_at")
+  deliveryOtp        String?         @map("delivery_otp") // Seller self-delivery: code the customer gives at handover (never sent to vendors)
   trackingEvents     TrackingEvent[]
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
@@ -377,6 +379,9 @@ model GroupShoppingSession {
   checkoutMode String               @default("HOST_PAY") @map("checkout_mode") // HOST_PAY, SPLIT_PAY
   status       String               @default("ACTIVE") // ACTIVE, WAITING_FOR_PAYMENTS, CHECKED_OUT, CLOSED
   expiresAt    DateTime             @map("expires_at")
+  genieState   Json?                @map("genie_state") // Genie gift-finder conversation progress (recipient, occasion, budget...)
+  splitMethod  String?              @map("split_method") // SPLIT_PAY only: BY_ITEMS (pay for what you added) or EQUAL
+  checkoutInfo Json?                @map("checkout_info") // Locked at checkout start: shipping details, total, final order id
   members      GroupSessionMember[]
   items        GroupCartItem[]
   messages     GroupChatMessage[]
@@ -396,6 +401,9 @@ model GroupSessionMember {
   guestEmail String?              @map("guest_email")
   role       String               @default("MEMBER") // HOST, MEMBER
   status     String               @default("JOINED") // INVITED, JOINED, PAID
+  shareAmount Float?              @map("share_amount") // Amount this member owes once group checkout starts
+  paidAt      DateTime?           @map("paid_at")
+  paymentInfo Json?               @map("payment_info") // { transactionId, method, maskedDetails }
   items      GroupCartItem[]
   messages   GroupChatMessage[]
   createdAt  DateTime             @default(now()) @map("created_at")

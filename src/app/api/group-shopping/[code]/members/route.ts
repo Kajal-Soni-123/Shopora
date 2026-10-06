@@ -53,6 +53,14 @@ export async function DELETE(
       );
     }
 
+    // During checkout, members with a share can't leave — their share (or payment) would be lost
+    if (session.status === 'WAITING_FOR_PAYMENTS' && (targetMember.shareAmount || 0) > 0) {
+      return NextResponse.json(
+        { success: false, error: 'This member has a share in the group checkout in progress and can\'t leave until it finishes or the host cancels checkout.' },
+        { status: 409 }
+      );
+    }
+
     // Perform deletion
     await prisma.groupSessionMember.delete({
       where: { id: targetMember.id },

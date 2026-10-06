@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { resolveActingMember, isStaleIdentity, STALE_IDENTITY_ERROR } from '@/lib/groupMember';
 
 // GET: Fetch messages & product suggestions for a group shopping session
 export async function GET(
@@ -93,7 +94,8 @@ export async function POST(
       include: { members: true },
     });
 
-    if (!session || session.status !== 'ACTIVE') {
+    // Chat stays open while members pay and after the order is placed
+    if (!session || !['ACTIVE', 'WAITING_FOR_PAYMENTS', 'CHECKED_OUT'].includes(session.status)) {
       return NextResponse.json(
         { success: false, error: 'Active group session not found' },
         { status: 404 }
@@ -101,11 +103,14 @@ export async function POST(
     }
 
     // Determine sender member
-    let senderMember = senderId
-      ? session.members.find((m) => m.id === senderId)
-      : user?.userId
-      ? session.members.find((m) => m.userId === user.userId)
-      : session.members[0];
+    const senderMember = resolveActingMember(session.members, user, senderId);
+
+    if (isStaleIdentity(senderMember, user, senderId)) {
+      return NextResponse.json(
+        { success: false, staleIdentity: true, error: STALE_IDENTITY_ERROR },
+        { status: 409 }
+      );
+    }
 
     if (!senderMember) {
       return NextResponse.json(

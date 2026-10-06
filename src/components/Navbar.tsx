@@ -423,8 +423,9 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         )}
 
-        {/* Category Tabs Bar — Horizontal Scrollable Container */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2.5 relative z-30 border-t border-slate-100 whitespace-nowrap">
+        {/* Category Tabs Bar — scrolls sideways on small screens; from md up it wraps instead,
+            because an overflow container would clip the sub-category dropdowns */}
+        <div className="flex items-center gap-1.5 overflow-x-auto md:overflow-visible md:flex-wrap no-scrollbar py-2.5 relative z-30 border-t border-slate-100 whitespace-nowrap">
           {/* All Products Tab */}
           <button
             onClick={() => handleCategoryClick('all')}

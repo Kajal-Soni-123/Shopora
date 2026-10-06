@@ -10,6 +10,8 @@ export interface GroupMember {
   guestEmail?: string | null;
   role: 'HOST' | 'MEMBER';
   status: 'INVITED' | 'JOINED' | 'PAID';
+  shareAmount?: number | null; // what this member owes once group checkout starts
+  paidAt?: string | null;
   user?: {
     id: string;
     name: string;
@@ -45,12 +47,33 @@ export interface GroupSession {
   expiresAt: string;
   members: GroupMember[];
   items: GroupCartItem[];
+  genieState?: { step?: string; updatedAt?: string } | null;
+  splitMethod?: 'BY_ITEMS' | 'EQUAL' | null;
+  checkoutInfo?: {
+    shipping: { name: string; email: string; phone?: string | null; address: string };
+    total: number;
+  } | {
+    // After the order is placed the cart is emptied and the party reopened; this is kept for the confirmation
+    lastOrder: {
+      orderId: string;
+      orderNumber: string;
+      total: number;
+      shipping: { name: string; address: string };
+      completedAt: string;
+    };
+  } | null;
   hostUser?: {
     id: string;
     name: string;
     email: string;
     avatar?: string | null;
   };
+}
+
+export interface StartGroupCheckoutOptions {
+  checkoutMode: 'HOST_PAY' | 'SPLIT_PAY';
+  splitMethod: 'BY_ITEMS' | 'EQUAL';
+  shipping: { name: string; email: string; phone?: string; address: string };
 }
 
 export interface GroupChatMessage {
@@ -137,7 +160,13 @@ interface GroupShoppingContextType {
   removeItemFromGroup: (itemId: string) => Promise<boolean>;
   sendInviteEmails: (emails: string[]) => Promise<{ success: boolean; message?: string; error?: string }>;
   removeMember: (memberId: string) => Promise<{ success: boolean; error?: string }>;
-  initiateGroupCheckout: (mode?: 'HOST_PAY' | 'SPLIT_PAY') => Promise<boolean>;
+  startGroupCheckout: (options: StartGroupCheckoutOptions) => Promise<{ success: boolean; error?: string }>;
+  cancelGroupCheckout: () => Promise<{ success: boolean; error?: string }>;
+  payGroupShare: (payment: {
+    transactionId: string;
+    paymentMethod: string;
+    maskedDetails?: string;
+  }) => Promise<{ success: boolean; error?: string; orderNumber?: string }>;
   leaveSession: () => void;
   sendMessage: (content: string, replyToId?: string) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<boolean>;
@@ -150,8 +179,19 @@ interface GroupShoppingContextType {
 
 const GroupShoppingContext = createContext<GroupShoppingContextType | undefined>(undefined);
 
+// The server rejects actions when the page's member no longer matches the auth cookie
+// (another account logged in from a different tab). Ask AuthContext to re-check.
+function notifyIfStaleIdentity(json: any) {
+  if (json?.staleIdentity && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('shopora_auth_stale'));
+  }
+}
+
 export function GroupShoppingProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  // Latest user for callbacks captured by intervals (e.g. the 4s session poll)
+  const userRef = React.useRef(user);
+  userRef.current = user;
   const [activeSession, setActiveSession] = useState<GroupSession | null>(null);
   const [activeMember, setActiveMember] = useState<GroupMember | null>(null);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -365,6 +405,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
 
   const fetchSessionDetails = async (code: string): Promise<GroupSession | null> => {
     try {
+      const user = userRef.current;
       const res = await fetch(`/api/group-shopping/${code}`);
       const json = await res.json();
       if (json.success && json.data) {
@@ -379,28 +420,34 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         if (json.data.members?.length > 0) {
           let currentMember: GroupMember | null = null;
 
-          // 1. Match by URL email if provided
-          if (urlEmail) {
-            currentMember = json.data.members.find(
-              (m: GroupMember) =>
-                (m.guestEmail && m.guestEmail.toLowerCase() === urlEmail) ||
-                (m.user?.email && m.user.email.toLowerCase() === urlEmail)
-            ) || null;
-          }
-
-          // 2. Match by saved member ID
-          if (!currentMember && savedMemberId) {
-            currentMember = json.data.members.find((m: GroupMember) => m.id === savedMemberId) || null;
-          }
-
-          // 3. Match by logged-in user ID or email
-          if (!currentMember && user) {
+          // 1. A logged-in user is always their own member record. This must win over
+          //    localStorage, which is shared between tabs/incognito windows and would
+          //    otherwise make several users appear as the same member.
+          if (user) {
             currentMember = json.data.members.find(
               (m: GroupMember) =>
                 (m.userId && m.userId === user.id) ||
                 (m.user?.id && m.user.id === user.id) ||
-                (m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase()) ||
-                (m.user?.email && m.user.email.toLowerCase() === user.email.toLowerCase())
+                (!m.userId && m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase())
+            ) || null;
+          }
+
+          // 2. Guests: match by URL email. Invite links carry the recipient's email, so never
+          //    treat a pending invitation or a registered account's row as "you" — those
+          //    must go through the join / login flow.
+          if (!currentMember && !user && urlEmail) {
+            currentMember = json.data.members.find(
+              (m: GroupMember) =>
+                m.status !== 'INVITED' &&
+                !m.userId &&
+                m.guestEmail && m.guestEmail.toLowerCase() === urlEmail
+            ) || null;
+          }
+
+          // 3. Guests: match by saved member ID (guest rows only)
+          if (!currentMember && !user && savedMemberId) {
+            currentMember = json.data.members.find(
+              (m: GroupMember) => m.id === savedMemberId && !m.userId
             ) || null;
           }
 
@@ -508,6 +555,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         }),
       });
       const json = await res.json();
+      notifyIfStaleIdentity(json);
       if (json.success) {
         await fetchSessionDetails(activeSession.code);
         return true;
@@ -595,23 +643,60 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  const initiateGroupCheckout = async (mode?: 'HOST_PAY' | 'SPLIT_PAY') => {
-    if (!activeSession) return false;
+  // Group checkout: the host locks the cart and picks who pays (host / by items / equal split)
+  const startGroupCheckout = async (options: StartGroupCheckoutOptions) => {
+    if (!activeSession) return { success: false, error: 'No active group session.' };
     try {
       const res = await fetch(`/api/group-shopping/${activeSession.code}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkoutMode: mode || activeSession.checkoutMode }),
+        body: JSON.stringify({ ...options, memberId: activeMember?.id }),
       });
       const json = await res.json();
-      if (json.success) {
-        await fetchSessionDetails(activeSession.code);
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.error('Error initiating group checkout:', err);
-      return false;
+      notifyIfStaleIdentity(json);
+      await fetchSessionDetails(activeSession.code);
+      fetchMessages(activeSession.code);
+      return json.success ? { success: true } : { success: false, error: json.error || 'Failed to start checkout.' };
+    } catch (err: any) {
+      console.error('Error starting group checkout:', err);
+      return { success: false, error: err?.message || 'Failed to start checkout.' };
+    }
+  };
+
+  const cancelGroupCheckout = async () => {
+    if (!activeSession) return { success: false, error: 'No active group session.' };
+    try {
+      const query = activeMember?.id ? `?memberId=${activeMember.id}` : '';
+      const res = await fetch(`/api/group-shopping/${activeSession.code}/checkout${query}`, { method: 'DELETE' });
+      const json = await res.json();
+      notifyIfStaleIdentity(json);
+      await fetchSessionDetails(activeSession.code);
+      fetchMessages(activeSession.code);
+      return json.success ? { success: true } : { success: false, error: json.error || 'Failed to cancel checkout.' };
+    } catch (err: any) {
+      console.error('Error cancelling group checkout:', err);
+      return { success: false, error: err?.message || 'Failed to cancel checkout.' };
+    }
+  };
+
+  const payGroupShare = async (payment: { transactionId: string; paymentMethod: string; maskedDetails?: string }) => {
+    if (!activeSession) return { success: false, error: 'No active group session.' };
+    try {
+      const res = await fetch(`/api/group-shopping/${activeSession.code}/pay-share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payment, memberId: activeMember?.id }),
+      });
+      const json = await res.json();
+      notifyIfStaleIdentity(json);
+      await fetchSessionDetails(activeSession.code);
+      fetchMessages(activeSession.code);
+      return json.success
+        ? { success: true, orderNumber: json.data?.order?.orderNumber }
+        : { success: false, error: json.error || 'Failed to record your payment.' };
+    } catch (err: any) {
+      console.error('Error paying group share:', err);
+      return { success: false, error: err?.message || 'Failed to record your payment.' };
     }
   };
 
@@ -660,6 +745,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         }),
       });
       const json = await res.json();
+      notifyIfStaleIdentity(json);
       if (json.success && json.data) {
         if (!activeMember) {
           setActiveMember(memberToUse);
@@ -733,6 +819,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         }),
       });
       const json = await res.json();
+      notifyIfStaleIdentity(json);
       if (json.success && json.data) {
         if (!activeMember) {
           setActiveMember(memberToUse);
@@ -785,6 +872,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         }
       );
       const json = await res.json();
+      notifyIfStaleIdentity(json);
       if (json.success) {
         return true;
       }
@@ -820,6 +908,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         }
       );
       const json = await res.json();
+      notifyIfStaleIdentity(json);
       if (json.success) {
         fetchMessages(activeSession.code);
         return true;
@@ -863,7 +952,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
       let res = await fetch(`/api/group-shopping/${sessionCode}/genie`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, memberId: activeMember?.id }),
       });
       let json = await res.json();
 
@@ -874,7 +963,7 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         res = await fetch(`/api/group-shopping/${refreshedCode}/genie`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, memberId: activeMember?.id }),
         });
         json = await res.json();
       }
@@ -919,7 +1008,9 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         removeItemFromGroup,
         sendInviteEmails,
         removeMember,
-        initiateGroupCheckout,
+        startGroupCheckout,
+        cancelGroupCheckout,
+        payGroupShare,
         leaveSession,
         sendMessage,
         deleteMessage,

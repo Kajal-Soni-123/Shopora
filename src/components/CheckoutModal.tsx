@@ -108,6 +108,21 @@ interface CheckoutModalProps {
   items: CartItem[];
   onOrderSuccess: (order: Order) => void;
   isDirectBuy?: boolean;
+  /**
+   * Pay a fixed amount instead of placing an order (e.g. a member's share of a group order).
+   * Skips the shipping step and Cash on Delivery; after a successful payment `onPaid` is
+   * called with the payment reference instead of creating an order.
+   */
+  paymentOnly?: {
+    amount: number;
+    title: string;
+    subtitle?: string;
+    onPaid: (payment: {
+      transactionId: string;
+      paymentMethod: string;
+      maskedDetails: string;
+    }) => Promise<{ success: boolean; error?: string }>;
+  };
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
@@ -116,6 +131,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   items,
   onOrderSuccess,
   isDirectBuy = false,
+  paymentOnly,
 }) => {
   const { user } = useAuth();
   const [step, setStep] = useState<1 | 2>(1);
@@ -147,7 +163,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   // Sync user profile data (including Primary Address) when user or modal opens
   React.useEffect(() => {
     if (isOpen) {
-      setStep(1);
+      setStep(paymentOnly ? 2 : 1);
       if (user) {
         const primaryAddr =
           user.primaryAddressType === 'WORK'
@@ -184,6 +200,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
   const [selectedWallet, setSelectedWallet] = useState('Apple Pay');
 
   const { subtotal } = calculateOrderTotals(items);
+  const payAmount = paymentOnly ? paymentOnly.amount : subtotal;
+  const paymentMethods = paymentOnly ? PAYMENT_METHODS.filter((m) => m.id !== 'COD') : PAYMENT_METHODS;
   const detectedBrand = detectCardBrand(cardDetails.number);
   const brandInfo = CARD_BRANDS.find((b) => b.brand === detectedBrand);
 
@@ -220,6 +238,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
         } else {
           maskedDetails = `Wallet: ${selectedWallet}`;
         }
+      }
+
+      if (paymentOnly) {
+        const result = await paymentOnly.onPaid({
+          transactionId: transactionId || `pay_${Math.random().toString(36).substring(2, 11)}`,
+          paymentMethod: formData.paymentMethod,
+          maskedDetails: maskedDetails || formData.paymentMethod,
+        });
+        if (result.success) {
+          setShowOtpModal(false);
+        } else {
+          showToast(result.error || 'Failed to record your payment');
+        }
+        return;
       }
 
       const res = await fetch('/api/orders', {
@@ -319,7 +351,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: subtotal,
+          amount: payAmount,
           paymentMethod: formData.paymentMethod,
           cardDetails,
           upiDetails,
@@ -388,17 +420,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
             </div>
             <div>
               <span className="text-base font-extrabold text-slate-900 block leading-tight">
-                {step === 1 ? 'Shipping & Order Breakdown' : 'Shopora Gateway Payment'}
+                {paymentOnly ? paymentOnly.title : step === 1 ? 'Shipping & Order Breakdown' : 'Shopora Gateway Payment'}
               </span>
               <span className="text-xs text-slate-500 font-medium">
-                Step {step} of 2 • 256-Bit Encrypted Secure Checkout
+                {paymentOnly
+                  ? paymentOnly.subtitle || '256-Bit Encrypted Secure Checkout'
+                  : `Step ${step} of 2 • 256-Bit Encrypted Secure Checkout`}
               </span>
             </div>
           </div>
         }
         footer={
           <div className="flex items-center justify-between w-full">
-            {step === 2 ? (
+            {step === 2 && !paymentOnly ? (
               <Button
                 type="button"
                 variant="outline"
@@ -435,7 +469,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
             >
               {step === 1
                 ? 'Continue to Payment'
-                : `Pay (${formatCurrency(subtotal)})`}
+                : `Pay (${formatCurrency(payAmount)})`}
             </Button>
           </div>
         }
@@ -585,7 +619,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   Select Payment Method
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {PAYMENT_METHODS.map((method) => {
+                  {paymentMethods.map((method) => {
                     const isSelected = formData.paymentMethod === method.id;
                     return (
                       <button
@@ -722,7 +756,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   </div>
 
                   {upiDetails.showQr ? (
-                    <RealUpiQrCode amount={subtotal} />
+                    <RealUpiQrCode amount={payAmount} />
                   ) : (
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -798,6 +832,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
               )}
 
               {/* Order Summary Box */}
+              {paymentOnly ? (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                  <div className="flex justify-between text-slate-600 font-medium">
+                    <span>Group order total ({items.length} items)</span>
+                    <span className="text-slate-900 font-bold">{formatCurrency(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-slate-200 text-sm font-extrabold text-slate-900">
+                    <span>Your Share</span>
+                    <span className="text-indigo-600">{formatCurrency(payAmount)}</span>
+                  </div>
+                </div>
+              ) : (
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>Items Total ({items.length})</span>
@@ -816,6 +862,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
                   <span className="text-indigo-600">{formatCurrency(subtotal)}</span>
                 </div>
               </div>
+              )}
               {/* 
               Security Banner
               <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-between text-[11px] text-slate-600 font-medium">
@@ -832,7 +879,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
 
       {/* 3D Secure / OTP Verification Authorization Modal */}
       {showOtpModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-5 relative animate-in fade-in zoom-in-95 duration-200">
             <div className="text-center space-y-2">
               <div className="w-12 h-12 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto text-indigo-600">
@@ -843,7 +890,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = React.memo(({
               </h3>
               <p className="text-xs text-slate-500">
                 Enter your 6-digit banking security code to authorize{' '}
-                <strong className="text-slate-900">{formatCurrency(subtotal)}</strong>
+                <strong className="text-slate-900">{formatCurrency(payAmount)}</strong>
               </p>
             </div>
 

@@ -6,6 +6,24 @@ import {
   buildGenieUserPrompt,
   formatGenieIntro,
 } from '@/prompts/geniePrompts';
+import { resolveActingMember } from '@/lib/groupMember';
+import { runGiftFlow, toDbState, GenieReply } from '@/lib/genie/giftFlow';
+import { runProductSearch } from '@/lib/genie/productQuery';
+
+const MESSAGE_INCLUDE = {
+  sender: {
+    select: {
+      id: true,
+      guestName: true,
+      guestEmail: true,
+      role: true,
+      user: { select: { id: true, name: true, avatar: true } },
+    },
+  },
+  product: {
+    select: { id: true, title: true, price: true, image: true, stock: true, rating: true, vendorId: true },
+  },
+} as const;
 
 interface LLMAnalysisResult {
   maxPrice: number | null;
@@ -152,7 +170,8 @@ export async function POST(
   try {
     const { code } = params;
     const body = await req.json();
-    const { prompt } = body;
+    const { prompt, memberId } = body;
+    const user = await getSessionUser();
 
     if (!prompt || !prompt.trim()) {
       return NextResponse.json(
@@ -207,9 +226,58 @@ export async function POST(
       });
     }
 
+    // Post the asker's words into the chat too, so the whole group can follow the conversation
+    const asker = resolveActingMember(session.members, user, memberId);
+    if (asker && asker.id !== genieMember.id) {
+      await prisma.groupChatMessage.create({
+        data: {
+          sessionId: session.id,
+          senderId: asker.id,
+          type: 'TEXT',
+          content: prompt.trim(),
+          reactions: {},
+          votes: {},
+        },
+      });
+    }
+
     // 3. Get available catalog categories for LLM context
     const categories = await prisma.category.findMany({ select: { id: true, name: true, parentId: true } });
     const categoryNames = categories.map((c) => c.name);
+
+    // Conversational gift finder (who → gender → occasion → budget → category → picks)
+    const gift = await runGiftFlow({
+      prisma,
+      prompt,
+      rawState: session.genieState,
+      categories,
+    });
+    if (gift.handled || session.genieState) {
+      await prisma.groupShoppingSession.update({
+        where: { id: session.id },
+        data: { genieState: toDbState(gift.handled ? gift.state : null) },
+      });
+    }
+    const postGenieReplies = async (replies: GenieReply[]) => {
+      let lastMessage = null;
+      for (const reply of replies) {
+        lastMessage = await prisma.groupChatMessage.create({
+          data: {
+            sessionId: session.id,
+            senderId: genieMember!.id,
+            type: reply.productId ? 'PRODUCT_SUGGESTION' : 'TEXT',
+            content: reply.content,
+            productId: reply.productId || null,
+            reactions: {},
+            votes: {},
+          },
+          include: MESSAGE_INCLUDE,
+        });
+      }
+      return NextResponse.json({ success: true, data: lastMessage });
+    };
+
+    if (gift.handled) return postGenieReplies(gift.replies);
 
     // 4. Analyze Prompt using LLM Engine
     const llmResult = await analyzePromptWithLLM(prompt, categoryNames);
@@ -258,7 +326,8 @@ export async function POST(
           sessionId: session.id,
           senderId: genieMember.id,
           type: 'TEXT',
-          content: "Hello! 👋 I am Shopora Genie, your AI co-shopping assistant. How can I help you find or suggest products for your shopping session today?",
+          content:
+            "Hey there! 👋 I'm Genie, your shopping buddy for this party. Are you looking for a gift for someone special, or just browsing? Either way, I'd love to help! 😊\n\n[ 🎁 Help me find a gift ]  [ 🌸 Skincare ]  [ 👗 Clothes ]  [ 💍 Jewellery ]  [ ☕ Appliances ]",
           productId: null,
           reactions: {},
           votes: {},
@@ -292,7 +361,8 @@ export async function POST(
           sessionId: session.id,
           senderId: genieMember.id,
           type: 'TEXT',
-          content: "I am your Shopora AI co-shopping assistant! 🛍️ Please ask me questions related to product recommendations, prices, or shopping suggestions.",
+          content:
+            "Ha, I wish I knew everything! 😄 I'm best at shopping though — finding gifts, comparing products, or spotting deals. Want me to help you find something?\n\n[ 🎁 Help me find a gift ]  [ 🌸 Skincare ]  [ 👗 Clothes ]  [ 💍 Jewellery ]",
           productId: null,
           reactions: {},
           votes: {},
@@ -312,6 +382,10 @@ export async function POST(
 
       return NextResponse.json({ success: true, message: outOfContextMsg });
     }
+
+    // Specific product questions ("red clothes?", "cotton shirts under $80") — real catalog search
+    const search = await runProductSearch({ prisma, prompt, categories });
+    if (search.handled) return postGenieReplies(search.replies);
 
     // 5. Fetch candidate products and rank via Relevance Scoring Engine
     let candidateProducts = await prisma.product.findMany({
@@ -399,7 +473,7 @@ export async function POST(
     // Explicit Category Intent flags from prompt
     const isApparelIntent = /cloth|apparel|fashion|wear|shirt|top|pant|dress|skirt|suit|tank|jacket/i.test(normalizedPrompt);
     const isSkincareIntent = /skincare|beauty|serum|sunscreen|cream|moisturiser|lotion|face/i.test(normalizedPrompt);
-    const isJewelryIntent = /jewelry|accessory|accessories|bangle|bangles|ring|necklace|earring|bag/i.test(normalizedPrompt);
+    const isJewelryIntent = /jewel|accessor|accessories|bangle|bangles|ring|necklace|earring|bag/i.test(normalizedPrompt);
     const isApplianceIntent = /appliance|tech|gadget|purifier|vacuum|espresso|coffee/i.test(normalizedPrompt);
 
     // Calculate Relevance Score for each candidate product
@@ -411,7 +485,7 @@ export async function POST(
 
       const isBeautySkincare = catName.includes('skincare') || catName.includes('beauty') || /sunscreen|serum|cream|lotion/i.test(title);
       const isApparelFashion = catName.includes('clothes') || catName.includes('clothing') || catName.includes('shirt') || /top|shirt|dress|skirt|jacket|pant|tank/i.test(title);
-      const isJewelryAccessory = /jewelry|bangle|bangles|ring|necklace|earring|bag|handbag|purse/i.test(title) || /jewelry|bangle/i.test(desc);
+      const isJewelryAccessory = /jewel|bangle|bangles|ring|necklace|earring|bag|handbag|purse|watch|bracelet|braclet/i.test(title) || /jewel|bangle/i.test(desc) || catName.includes('jewel');
       const isGourmetTech = /espresso|coffee|purifier|gadget|vacuum/i.test(title) || catName.includes('appliance');
 
       // 1. Strict Category Intent Boosting (+60 for matching intent, -80 penalty for wrong category)
@@ -533,7 +607,7 @@ export async function POST(
       Boolean(llmResult.categoryName) ||
       /skincare|beauty|serum|sunscreen|cream|moisturiser|lotion|face|skin-care|skin care/i.test(normalizedPrompt) ||
       /cloth|clothes|fashion|wear|apparel|shirt|top|pant|dress|skirt|suit|tank|jacket/i.test(normalizedPrompt) ||
-      /jewelry|accessory|accessories|bangle|bangles|ring|necklace|earring|bag/i.test(normalizedPrompt) ||
+      /jewel|accessor|accessories|bangle|bangles|ring|necklace|earring|bag/i.test(normalizedPrompt) ||
       /appliance|tech|gadget|purifier|vacuum|espresso|coffee/i.test(normalizedPrompt) ||
       /furniture|sofa|table|chair|desk/i.test(normalizedPrompt);
 
@@ -547,7 +621,7 @@ export async function POST(
     let selectedCatLabel = 'your requested category';
     if (/clothes|fashion/i.test(normalizedPrompt)) selectedCatLabel = 'Clothes & Fashion';
     else if (/skincare|beauty|skin-care|skin care/i.test(normalizedPrompt)) selectedCatLabel = 'Skincare';
-    else if (/jewelry|accessory/i.test(normalizedPrompt)) selectedCatLabel = 'Jewelry & Accessories';
+    else if (/jewel|accessor/i.test(normalizedPrompt)) selectedCatLabel = 'Jewelry & Accessories';
     else if (/appliance|tech/i.test(normalizedPrompt)) selectedCatLabel = 'Appliances & Tech';
 
     const pills = `\n\n[ 🌸 Skincare ]  [ 👗 Clothes & Fashion ]  [ 💍 Jewelry & Accessories ]  [ ☕ Appliances & Tech ]`;

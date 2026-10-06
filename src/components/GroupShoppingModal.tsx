@@ -19,7 +19,6 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
     joinSession,
     sendInviteEmails,
     removeMember,
-    initiateGroupCheckout,
     leaveSession,
     fetchSuggestedUsers,
     setIsInviteDrawerOpen,
@@ -31,6 +30,7 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
   const [guestHostName, setGuestHostName] = useState('');
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [guestJoinName, setGuestJoinName] = useState('');
+  const [guestJoinEmail, setGuestJoinEmail] = useState('');
   const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [suggestedUsers, setSuggestedUsers] = useState<Array<{ id: string; name: string; email: string; avatar?: string | null; role: string }>>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -86,6 +86,11 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
 
     if (urlCode) {
       setJoinCodeInput(urlCode.toUpperCase());
+    }
+
+    const urlEmail = urlParams.get('email');
+    if (urlEmail) {
+      setGuestJoinEmail(urlEmail);
     }
 
     const currentId = activeSession?.id;
@@ -167,7 +172,7 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
     e.preventDefault();
     if (!joinCodeInput.trim()) return;
     setIsSubmitting(true);
-    const result = await joinSession(joinCodeInput.trim(), guestJoinName);
+    const result = await joinSession(joinCodeInput.trim(), guestJoinName, guestJoinEmail.trim() || undefined);
     setIsSubmitting(false);
     if (result.success) {
       setActiveTab('ACTIVE');
@@ -552,6 +557,19 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
                   value={guestJoinName}
                   onChange={(e) => setGuestJoinName(e.target.value)}
                   placeholder="e.g. Sarah"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-600 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-500 mb-1">
+                  Your Email (If guest)
+                </label>
+                <input
+                  type="email"
+                  value={guestJoinEmail}
+                  onChange={(e) => setGuestJoinEmail(e.target.value)}
+                  placeholder="e.g. sarah@example.com"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-indigo-600 outline-none"
                 />
               </div>

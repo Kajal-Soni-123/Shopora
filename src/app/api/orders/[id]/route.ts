@@ -55,6 +55,12 @@ export async function GET(
       return ApiResponse.notFound('Order not found');
     }
 
+    // The seller self-delivery code is shown only to the customer who owns this order
+    const isOrderOwner =
+      !!sessionUser &&
+      ((!!ord.userId && ord.userId === sessionUser.userId) ||
+        ord.customerEmail.toLowerCase() === sessionUser.email?.toLowerCase());
+
     // Format DB response
     const formattedOrder = {
       id: ord.id,
@@ -93,6 +99,10 @@ export async function GET(
           pickupScheduledAt: s.pickupScheduledAt?.toISOString(),
           pickedUpAt: s.pickedUpAt?.toISOString(),
           deliveredAt: s.deliveredAt?.toISOString(),
+          deliveryOtp:
+            isOrderOwner && s.provider === 'self' && ['IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(s.status)
+              ? s.deliveryOtp
+              : undefined,
           trackingEvents: s.trackingEvents.map((e) => ({
             id: e.id,
             status: e.status,
@@ -104,6 +114,8 @@ export async function GET(
         })),
         createdAt: sub.createdAt.toISOString(),
         items: sub.items.map((item) => ({
+          id: item.id,
+          status: item.status,
           product: {
             ...item.product,
             attributes: (item.selectedAttributes as any) || item.product.attributes,

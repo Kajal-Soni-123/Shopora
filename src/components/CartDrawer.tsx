@@ -6,6 +6,7 @@ import { formatCurrency, groupItemsByVendor } from '@/lib/utils';
 import { Badge } from '@/components/common/Badge';
 import { Button } from '@/components/common/Button';
 import { useGroupShopping } from '@/context/GroupShoppingContext';
+import { GroupCheckoutPanel, GroupOrderPlacedBanner } from '@/components/GroupCheckoutPanel';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -32,12 +33,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
     setIsGroupModalOpen,
     updateItemQuantity,
     removeItemFromGroup,
-    initiateGroupCheckout,
   } = useGroupShopping();
 
   if (!isOpen) return null;
 
   const isGroupTab = activeCartTab === 'GROUP' && activeSession;
+  // Group cart can't be edited once checkout has started
+  const isLocked = !!isGroupTab && activeSession.status !== 'ACTIVE';
 
   // Convert items to uniform display structure with member attribution
   const displayItems = isGroupTab
@@ -151,14 +153,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
 
           {/* Cart Items List with Vendor Sub-Order Partitioning */}
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {items.length === 0 ? (
+            {displayItems.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-3">
+                {isGroupTab && <GroupOrderPlacedBanner />}
                 <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
                   <Truck className="w-8 h-8 text-slate-400" />
                 </div>
-                <p className="text-sm font-bold text-slate-700">Your cart is empty</p>
+                <p className="text-sm font-bold text-slate-700">
+                  {isGroupTab ? 'Your group cart is empty' : 'Your cart is empty'}
+                </p>
                 <p className="text-xs text-slate-500 max-w-xs">
-                  Explore our technical gear, outerwear, and audio equipment to add items.
+                  {isGroupTab
+                    ? 'Add more products or suggest them in the group chat to keep shopping together.'
+                    : 'Explore our technical gear, outerwear, and audio equipment to add items.'}
                 </p>
               </div>
             ) : (
@@ -204,6 +211,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
                                   </span>
                                 )}
                               </div>
+                              {!isLocked && (
                               <button
                                 onClick={() => {
                                   if (isGroupTab && item.groupItemId) {
@@ -216,10 +224,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
+                              )}
                             </div>
 
                             <div className="flex items-center justify-between text-xs mt-2">
                               <span className="font-extrabold text-slate-900">{formatCurrency(item.product.price)}</span>
+                              {isLocked ? (
+                                <span className="text-slate-500 font-bold">Qty {item.quantity}</span>
+                              ) : (
                               <div className="flex items-center gap-2 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-sm">
                                 <button
                                   onClick={() => {
@@ -249,6 +261,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
                                   <Plus className="w-3 h-3" />
                                 </button>
                               </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -261,11 +274,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
           </div>
 
           {/* Drawer Footer */}
-          {displayItems.length > 0 && (
+          {displayItems.length > 0 && isGroupTab && (
+            <GroupCheckoutPanel subtotal={subtotal} vendorCount={vendorCount} />
+          )}
+          {displayItems.length > 0 && !isGroupTab && (
             <div className="p-4 border-t border-slate-200 bg-white space-y-3">
               <div className="space-y-1.5 text-xs text-slate-500 font-medium">
                 <div className="flex justify-between">
-                  <span>{isGroupTab ? 'Group Cart Subtotal' : 'Cart Subtotal'}</span>
+                  <span>Cart Subtotal</span>
                   <span className="text-slate-900 font-semibold">{formatCurrency(subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -284,9 +300,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = React.memo(({
                 fullWidth
                 onClick={onProceedToCheckout}
                 rightIcon={<ArrowRight className="w-4 h-4" />}
-                className={isGroupTab ? 'bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-md shadow-purple-600/25' : 'bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25'}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md shadow-indigo-600/25"
               >
-                {isGroupTab ? 'Proceed to Group Checkout' : 'Proceed to Checkout'}
+                Proceed to Checkout
               </Button>
             </div>
           )}

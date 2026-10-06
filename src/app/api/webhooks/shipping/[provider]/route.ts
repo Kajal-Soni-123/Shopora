@@ -4,13 +4,24 @@ import { NextRequest } from 'next/server';
 import { ApiResponse } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
 import { mapProviderStatusToInternal } from '@/lib/shipping/statusMapper';
-import { deriveAggregateOrderStatus } from '@/lib/shipping/fulfillmentLifecycle';
+import { applyShipmentEvent } from '@/lib/shipping/applyShipmentUpdate';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { provider: string } }
 ) {
   try {
+    // Only the courier may call this: it can mark orders shipped/delivered.
+    // Configure the same secret in the courier dashboard (header or ?secret= query param).
+    const expectedSecret = process.env.SHIPPING_WEBHOOK_SECRET;
+    if (expectedSecret) {
+      const provided = req.headers.get('x-webhook-secret') || req.nextUrl.searchParams.get('secret');
+      if (provided !== expectedSecret) return ApiResponse.unauthorized('Invalid webhook secret');
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error('SHIPPING_WEBHOOK_SECRET is not set — rejecting shipping webhook');
+      return ApiResponse.serverError('Shipping webhook is not configured');
+    }
+
     const providerName = params.provider.toLowerCase();
     const body = await req.json();
 
@@ -69,85 +80,19 @@ export async function POST(
       );
     }
 
-    // 4. Process Status Update & Sync SubOrder / Order status in DB transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Create new TrackingEvent
-      const newEvent = await tx.trackingEvent.create({
-        data: {
-          shipmentId: shipment.id,
-          status: targetStatus,
-          location,
-          description,
-          eventTime,
-          providerEvent: rawStatus,
-          rawPayload: body,
-        },
-      });
-
-      // Update Shipment status and timestamps
-      const shipmentDataToUpdate: any = {
-        status: targetStatus,
-      };
-      if (targetStatus === 'PICKED_UP' && !shipment.pickedUpAt) {
-        shipmentDataToUpdate.pickedUpAt = eventTime;
-      } else if (targetStatus === 'DELIVERED' && !shipment.deliveredAt) {
-        shipmentDataToUpdate.deliveredAt = eventTime;
-      }
-
-      const updatedShipment = await tx.shipment.update({
-        where: { id: shipment.id },
-        data: shipmentDataToUpdate,
-      });
-
-      // Sync SubOrder status
-      let subOrderStatus = shipment.fulfillment.status;
-      if (['PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY'].includes(targetStatus)) {
-        subOrderStatus = 'SHIPPED';
-      } else if (targetStatus === 'DELIVERED') {
-        subOrderStatus = 'DELIVERED';
-      } else if (targetStatus === 'CANCELLED') {
-        subOrderStatus = 'CANCELLED';
-      }
-
-      await tx.subOrder.update({
-        where: { id: shipment.fulfillmentId },
-        data: {
-          status: subOrderStatus,
-        },
-      });
-
-      // Fetch all sub-orders of parent Order to derive aggregate status
-      const allSubOrders = await tx.subOrder.findMany({
-        where: { orderId: shipment.fulfillment.orderId },
-        select: { status: true },
-      });
-
-      const aggregateStatus = deriveAggregateOrderStatus(allSubOrders.map((s) => s.status));
-
-      const parentOrder = shipment.fulfillment.order;
-      let newPaymentStatus = parentOrder.paymentStatus;
-      let codCollectedAmount = parentOrder.codCollectedAmount;
-
-      if (targetStatus === 'DELIVERED' && parentOrder.paymentMethod === 'COD') {
-        const cashCollected = body.cashCollected ?? body.cash_collected ?? true;
-        const amountCollected = parseFloat(body.amountCollected || body.amount_collected || parentOrder.totalAmount);
-
-        if (cashCollected && amountCollected >= (parentOrder.totalAmount - 0.01)) {
-          newPaymentStatus = 'COD_COLLECTED';
-          codCollectedAmount = amountCollected;
-        }
-      }
-
-      await tx.order.update({
-        where: { id: shipment.fulfillment.orderId },
-        data: {
-          aggregateStatus,
-          paymentStatus: newPaymentStatus,
-          codCollectedAmount,
-        },
-      });
-
-      return { updatedShipment, newEvent, aggregateStatus };
+    // 4. Record the event and sync shipment, sub-order and order (shared with simulator / self-delivery)
+    const cashCollected = body.cashCollected ?? body.cash_collected;
+    const amountCollected = body.amountCollected ?? body.amount_collected;
+    const result = await applyShipmentEvent({
+      shipmentId: shipment.id,
+      status: targetStatus,
+      location,
+      description,
+      eventTime,
+      providerEvent: rawStatus,
+      rawPayload: body,
+      cashCollected: cashCollected === undefined ? undefined : Boolean(cashCollected),
+      amountCollected: amountCollected === undefined ? undefined : parseFloat(amountCollected),
     });
 
     return ApiResponse.success(

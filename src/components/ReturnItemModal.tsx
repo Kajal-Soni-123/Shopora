@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { RotateCcw, Upload, Image as ImageIcon } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { Select } from '@/components/common/Select';
+import { Input } from '@/components/common/Input';
+import { Textarea } from '@/components/common/Textarea';
 import { formatCurrency } from '@/lib/utils';
 
 interface ReturnItemModalProps {
@@ -43,6 +46,7 @@ export const ReturnItemModal: React.FC<ReturnItemModalProps> = ({
   const [images, setImages] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ reason?: string; customerNote?: string }>({});
 
   const estimatedRefund = Number((itemPrice * quantity).toFixed(2));
 
@@ -59,6 +63,21 @@ export const ReturnItemModal: React.FC<ReturnItemModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const errors: { reason?: string; customerNote?: string } = {};
+    if (!reason) {
+      errors.reason = 'Please select a reason for return.';
+    }
+    if (!customerNote.trim()) {
+      errors.customerNote = 'Please describe the issue in detail.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    setFieldErrors({});
     setIsSubmitting(true);
     setErrorMsg(null);
 
@@ -102,7 +121,7 @@ export const ReturnItemModal: React.FC<ReturnItemModalProps> = ({
         </div>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form noValidate onSubmit={handleSubmit} className="space-y-4">
         <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex justify-between items-center">
           <div className="truncate pr-2">
             <span className="text-slate-500 font-medium">Product:</span>
@@ -122,77 +141,75 @@ export const ReturnItemModal: React.FC<ReturnItemModalProps> = ({
 
         {/* Quantity selector */}
         {maxQuantity > 1 && (
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Quantity to Return (Max: {maxQuantity})
-            </label>
-            <select
-              value={quantity}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-600"
-            >
-              {Array.from({ length: maxQuantity }, (_, i) => i + 1).map((qty) => (
-                <option key={qty} value={qty}>
-                  {qty} item(s)
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Quantity to Return *"
+            options={Array.from({ length: maxQuantity }, (_, i) => i + 1).map((qty) => ({
+              value: String(qty),
+              label: `${qty} item(s)`,
+            }))}
+            value={String(quantity)}
+            onChange={(val) => setQuantity(Number(val))}
+          />
         )}
 
         {/* Reason selector */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5">
-            Reason for Return
-          </label>
-          <select
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-indigo-600"
-          >
-            {RETURN_REASONS.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Select
+          label="Reason for Return *"
+          options={RETURN_REASONS.map((r) => ({
+            value: r.id,
+            label: r.label,
+          }))}
+          value={reason}
+          onChange={(val) => {
+            setReason(val);
+            if (fieldErrors.reason) {
+              setFieldErrors((prev) => ({ ...prev, reason: undefined }));
+            }
+          }}
+          placeholder="Select reason for return..."
+          error={fieldErrors.reason}
+        />
 
         {/* Description / Customer Note */}
-        <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5">
-            Issue Description / Customer Note
-          </label>
-          <textarea
-            rows={3}
-            required
-            value={customerNote}
-            onChange={(e) => setCustomerNote(e.target.value)}
-            placeholder="Please describe the condition or defect in detail..."
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-indigo-600 transition-colors"
-          />
-        </div>
+        <Textarea
+          label="Issue Description / Customer Note *"
+          rows={3}
+          value={customerNote}
+          onChange={(e) => {
+            setCustomerNote(e.target.value);
+            if (fieldErrors.customerNote) {
+              setFieldErrors((prev) => ({ ...prev, customerNote: undefined }));
+            }
+          }}
+          placeholder="Please describe the condition or defect in detail..."
+          error={fieldErrors.customerNote}
+        />
 
         {/* Evidence Image URL Upload */}
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
-            <span>Evidence Photos (URLs)</span>
-            <span className="text-[10px] text-slate-400">Optional</span>
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="url"
-              value={imageInput}
-              onChange={(e) => setImageInput(e.target.value)}
-              placeholder="https://example.com/photo.jpg"
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-indigo-600"
-            />
-            <Button type="button" variant="outline" size="sm" onClick={handleAddImage}>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <Input
+                label="Evidence Photos (URLs)"
+                type="url"
+                value={imageInput}
+                onChange={(e) => setImageInput(e.target.value)}
+                placeholder="https://example.com/photo.jpg"
+                helperText="Optional evidence photos"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddImage}
+              className="mb-0.5 shrink-0"
+            >
               Add Photo
             </Button>
           </div>
           {images.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
+            <div className="flex flex-wrap gap-2 pt-2">
               {images.map((img, idx) => (
                 <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-200 w-12 h-12 bg-slate-100 flex items-center justify-center">
                   {/* eslint-disable-next-html-element-suppression */}
@@ -234,3 +251,4 @@ export const ReturnItemModal: React.FC<ReturnItemModalProps> = ({
     </Modal>
   );
 };
+

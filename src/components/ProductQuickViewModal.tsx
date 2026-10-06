@@ -12,11 +12,14 @@ import { RatingStars } from '@/components/common/RatingStars';
 import { useAuth } from '@/context/AuthContext';
 import { getColorStyle } from '@/lib/color-utils';
 import { useGroupShopping } from '@/context/GroupShoppingContext';
+import { ReviewPhotoPicker } from '@/components/common/ReviewPhotoPicker';
+import { ReviewPhotos } from '@/components/common/ReviewPhotos';
 
 interface Review {
   id: string;
   rating: number;
   comment: string;
+  images?: string[];
   createdAt: string;
   user: {
     id: string;
@@ -55,6 +58,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
   const [userRating, setUserRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
   const [commentText, setCommentText] = useState('');
+  const [reviewPhotos, setReviewPhotos] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -80,6 +84,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
       setErrorMsg('');
       setSuccessMsg('');
       setCommentText('');
+      setReviewPhotos([]);
       setUserRating(5);
       setActiveImageIndex(0);
       setSelectedVariants({});
@@ -115,6 +120,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
           productId: product.id,
           rating: userRating,
           comment: commentText.trim(),
+          images: reviewPhotos,
         }),
       });
 
@@ -125,6 +131,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
       } else {
         setSuccessMsg('Thank you! Your customer review and comment have been posted.');
         setCommentText('');
+        setReviewPhotos([]);
         setUserRating(5);
         fetchReviews(product.id);
       }
@@ -538,6 +545,8 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                   />
                 </div>
 
+                <ReviewPhotoPicker photos={reviewPhotos} onChange={setReviewPhotos} />
+
                 <div className="flex items-center justify-between">
                   {!user ? (
                     <button
@@ -625,6 +634,7 @@ export const ProductQuickViewModal: React.FC<ProductQuickViewModalProps> = React
                       <p className="text-xs text-slate-700 font-medium leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
                         "{r.comment}"
                       </p>
+                      <ReviewPhotos images={r.images} size="sm" />
                     </div>
                   ))}
                 </div>

@@ -1,76 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { CartItem as ClientCartItem, INITIAL_VENDORS, TrackingEvent } from '@/lib/data';
+import { CartItem as ClientCartItem } from '@/lib/data';
 import { ApiResponse } from '@/lib/api-response';
-import { groupItemsByVendor, generateTrackingNumber } from '@/lib/utils';
-import { SHIPPING_CARRIERS, DEFAULT_VENDOR_FALLBACK } from '@/lib/constants';
-import { sendOrderConfirmationSMS } from '@/lib/twilio';
 import { prisma } from '@/lib/prisma';
+import { createOrderRecord, orderTotal } from '@/lib/orders/createOrder';
 import { getSessionUser } from '@/lib/auth';
 import { checkCodAvailability } from '@/lib/shipping/codService';
-
-// Helper: Add business days (skipping Sat/Sun)
-function addBusinessDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  let added = 0;
-  while (added < days) {
-    result.setDate(result.getDate() + 1);
-    const day = result.getDay();
-    if (day !== 0 && day !== 6) added++; // Skip Sunday (0) and Saturday (6)
-  }
-  return result;
-}
-
-// Helper: Build initial status history for a new order
-function buildInitialStatusHistory(createdAt: string): TrackingEvent[] {
-  const base = new Date(createdAt);
-  const confirmed = new Date(base.getTime() + 30 * 60 * 1000); // +30 min
-  return [
-    {
-      status: 'PENDING',
-      label: 'Order Placed',
-      timestamp: base.toISOString(),
-      note: 'Your order has been received successfully.',
-      completed: true,
-    },
-    {
-      status: 'CONFIRMED',
-      label: 'Order Confirmed',
-      timestamp: confirmed.toISOString(),
-      note: 'Vendor has confirmed and is preparing your order.',
-      completed: true,
-    },
-    {
-      status: 'PACKED',
-      label: 'Packed & Ready',
-      timestamp: '',
-      note: 'Items are packed and ready for pickup by courier.',
-      completed: false,
-    },
-    {
-      status: 'SHIPPED',
-      label: 'Shipped',
-      timestamp: '',
-      note: 'Package is on its way to you.',
-      completed: false,
-    },
-    {
-      status: 'OUT_FOR_DELIVERY',
-      label: 'Out for Delivery',
-      timestamp: '',
-      note: 'Your package is out for delivery today.',
-      completed: false,
-    },
-    {
-      status: 'DELIVERED',
-      label: 'Delivered',
-      timestamp: '',
-      note: 'Package delivered successfully. Enjoy your purchase!',
-      completed: false,
-    },
-  ];
-}
 
 // GET /api/orders - Fetch customer order history from PostgreSQL DB
 export async function GET(request: Request) {
@@ -141,6 +77,8 @@ export async function GET(request: Request) {
         statusHistory: (sub.statusHistory as any) || [],
         createdAt: sub.createdAt.toISOString(),
         items: sub.items.map((item) => ({
+          id: item.id,
+          status: item.status,
           product: {
             ...item.product,
             attributes: (item.selectedAttributes as any) || item.product.attributes,
@@ -182,59 +120,7 @@ export async function POST(request: Request) {
       return ApiResponse.badRequest('Cart is empty. Please add items before checking out.');
     }
 
-    // Group items by vendorId
-    const itemsByVendor = groupItemsByVendor(
-      items,
-      (item) => item.product.vendorId || DEFAULT_VENDOR_FALLBACK.id
-    );
-
-    const orderNumber = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-    const createdDate = new Date();
-
-    // Get list of valid vendor IDs from database or initial fallback
-    const dbVendors = await prisma.vendor.findMany({ select: { id: true } });
-    const validVendorIds = new Set(dbVendors.map((v) => v.id));
-
-    let masterTotalAmount = 0;
-    const subOrdersData: any[] = [];
-
-    Object.entries(itemsByVendor).forEach(([vendorId, vendorItems], index) => {
-      // Ensure vendorId is valid in DB, otherwise assign to first valid vendor or fallback
-      const targetVendorId = validVendorIds.has(vendorId)
-        ? vendorId
-        : validVendorIds.values().next().value || DEFAULT_VENDOR_FALLBACK.id;
-
-      let subtotal = 0;
-      const orderItemsCreate = vendorItems.map((item) => {
-        const itemTotal = item.product.price * item.quantity;
-        subtotal += itemTotal;
-        return {
-          productId: item.product.id,
-          quantity: item.quantity,
-          price: item.product.price,
-          selectedAttributes: item.product.attributes || null,
-        };
-      });
-
-      masterTotalAmount += subtotal;
-
-      const deliveryDays = 5 + (index % 3);
-      const expectedDeliveryDate = addBusinessDays(createdDate, deliveryDays);
-
-      subOrdersData.push({
-        subOrderNumber: `${orderNumber}-SUB${index + 1}`,
-        vendorId: targetVendorId,
-        status: 'PENDING',
-        subtotal,
-        trackingNumber: generateTrackingNumber('Vendor'),
-        shippingCarrier: SHIPPING_CARRIERS[index % SHIPPING_CARRIERS.length],
-        expectedDelivery: expectedDeliveryDate.toISOString(),
-        statusHistory: buildInitialStatusHistory(createdDate.toISOString()),
-        items: {
-          create: orderItemsCreate,
-        },
-      });
-    });
+    const masterTotalAmount = orderTotal(items);
 
     // Check COD validation if paymentMethod is COD
     const isCod = (paymentMethod || '').toUpperCase() === 'COD';
@@ -242,6 +128,8 @@ export async function POST(request: Request) {
     let codCheckReason = '';
 
     if (isCod) {
+      const dbVendors = await prisma.vendor.findMany({ select: { id: true } });
+      const validVendorIds = new Set(dbVendors.map((v) => v.id));
       // Extract pincode from shipping address (e.g. 6-digit number at end or in text)
       const pincodeMatch = (shippingAddress || '').match(/\b\d{6}\b/);
       const pincode = pincodeMatch ? pincodeMatch[0] : '400001';
@@ -262,96 +150,23 @@ export async function POST(request: Request) {
       ? 'cod_' + Math.random().toString(36).substring(2, 11)
       : transactionId || 'pay_' + Math.random().toString(36).substring(2, 11);
 
-    // Save master order and sub-orders in PostgreSQL via Prisma
-    const newOrder: any = await prisma.order.create({
-      data: {
-        orderNumber,
-        userId: sessionUser?.userId || null,
-        customerName: customerName || sessionUser?.name || 'Customer',
-        customerEmail: customerEmail || sessionUser?.email || 'customer@shopora.com',
-        customerPhone: customerPhone || null,
-        shippingAddress: shippingAddress || 'Standard Delivery Address',
-        paymentMethod: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
-        paymentStatus: initialPaymentStatus,
-        codAmount: isCod ? masterTotalAmount : null,
-        transactionId: finalTransactionId,
-        paymentDetails: (paymentDetails as any) || {
-          method: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
-          maskedDetails: isCod ? 'Cash on Delivery' : '•••• 4242',
-          provider: isCod ? 'Pay on Delivery' : 'Shopora Pay',
-        },
-        totalAmount: masterTotalAmount,
-        aggregateStatus: 'PENDING',
-        subOrders: {
-          create: subOrdersData,
-        },
-      } as any,
-      include: {
-        subOrders: {
-          include: {
-            vendor: true,
-            items: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
+    const formattedOrder = await createOrderRecord({
+      items,
+      userId: sessionUser?.userId || null,
+      customerName: customerName || sessionUser?.name || 'Customer',
+      customerEmail: customerEmail || sessionUser?.email || 'customer@shopora.com',
+      customerPhone: customerPhone || null,
+      shippingAddress: shippingAddress || 'Standard Delivery Address',
+      paymentMethod: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
+      paymentStatus: initialPaymentStatus,
+      codAmount: isCod ? masterTotalAmount : null,
+      transactionId: finalTransactionId,
+      paymentDetails: (paymentDetails as any) || {
+        method: isCod ? 'COD' : paymentMethod || 'CREDIT_CARD',
+        maskedDetails: isCod ? 'Cash on Delivery' : '•••• 4242',
+        provider: isCod ? 'Pay on Delivery' : 'Shopora Pay',
       },
     });
-
-    // Trigger SMS/WhatsApp notification if phone is present
-    if (newOrder.customerPhone) {
-      sendOrderConfirmationSMS(
-        newOrder.customerPhone,
-        {
-          orderNumber: newOrder.orderNumber,
-          customerName: newOrder.customerName,
-          totalAmount: newOrder.totalAmount,
-          itemCount: items.length,
-          subOrderCount: newOrder.subOrders.length,
-        },
-        'WHATSAPP'
-      ).catch((err) => console.error('Background Twilio WhatsApp Error:', err));
-    }
-
-    // Format final object for client
-    const formattedOrder = {
-      id: newOrder.id,
-      orderNumber: newOrder.orderNumber,
-      customerName: newOrder.customerName,
-      customerEmail: newOrder.customerEmail,
-      customerPhone: newOrder.customerPhone || undefined,
-      shippingAddress: newOrder.shippingAddress,
-      paymentMethod: newOrder.paymentMethod,
-      paymentStatus: newOrder.paymentStatus,
-      transactionId: newOrder.transactionId || undefined,
-      paymentDetails: newOrder.paymentDetails || undefined,
-      totalAmount: newOrder.totalAmount,
-      aggregateStatus: newOrder.aggregateStatus,
-      createdAt: newOrder.createdAt.toISOString(),
-      subOrders: newOrder.subOrders.map((sub) => ({
-        id: sub.id,
-        subOrderNumber: sub.subOrderNumber,
-        vendorId: sub.vendorId,
-        vendor: sub.vendor,
-        status: sub.status,
-        subtotal: sub.subtotal,
-        trackingNumber: sub.trackingNumber,
-        shippingCarrier: sub.shippingCarrier,
-        expectedDelivery: sub.expectedDelivery || undefined,
-        statusHistory: (sub.statusHistory as any) || [],
-        createdAt: sub.createdAt.toISOString(),
-        items: sub.items.map((item) => ({
-          product: {
-            ...item.product,
-            attributes: (item.selectedAttributes as any) || item.product.attributes,
-          },
-          quantity: item.quantity,
-          price: item.price,
-        })),
-      })),
-    };
 
     return ApiResponse.created({ order: formattedOrder }, 'Order created and saved in database successfully');
   } catch (error) {

@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { resolveActingMember, isStaleIdentity, STALE_IDENTITY_ERROR } from '@/lib/groupMember';
 
 // POST: Add item to group cart
 export async function POST(
@@ -27,6 +28,13 @@ export async function POST(
       include: { members: true },
     });
 
+    if (session && ['WAITING_FOR_PAYMENTS', 'CHECKED_OUT'].includes(session.status)) {
+      return NextResponse.json(
+        { success: false, error: "The group cart is locked because checkout has started." },
+        { status: 409 }
+      );
+    }
+
     if (!session || session.status !== 'ACTIVE') {
       return NextResponse.json(
         { success: false, error: "Active group session not found" },
@@ -35,11 +43,14 @@ export async function POST(
     }
 
     // Determine adding member
-    let addedByMember = memberId
-      ? session.members.find((m) => m.id === memberId)
-      : user?.userId
-      ? session.members.find((m) => m.userId === user.userId)
-      : session.members[0];
+    const addedByMember = resolveActingMember(session.members, user, memberId);
+
+    if (isStaleIdentity(addedByMember, user, memberId)) {
+      return NextResponse.json(
+        { success: false, staleIdentity: true, error: STALE_IDENTITY_ERROR },
+        { status: 409 }
+      );
+    }
 
     if (!addedByMember) {
       return NextResponse.json(
@@ -91,6 +102,24 @@ export async function POST(
   }
 }
 
+/** Item edits are only allowed for this session's items while the cart is still open (not during checkout). */
+async function checkEditableItem(code: string, itemId: string) {
+  const item = await prisma.groupCartItem.findUnique({
+    where: { id: itemId },
+    include: { session: { select: { code: true, status: true } } },
+  });
+  if (!item || item.session.code !== code) {
+    return NextResponse.json({ success: false, error: "Item not found in this group cart" }, { status: 404 });
+  }
+  if (item.session.status !== 'ACTIVE') {
+    return NextResponse.json(
+      { success: false, error: "The group cart is locked while checkout is in progress." },
+      { status: 409 }
+    );
+  }
+  return null;
+}
+
 // PUT: Update item quantity in group cart
 export async function PUT(
   req: NextRequest,
@@ -106,6 +135,9 @@ export async function PUT(
         { status: 400 }
       );
     }
+
+    const blocked = await checkEditableItem(params.code, itemId);
+    if (blocked) return blocked;
 
     if (quantity <= 0) {
       await prisma.groupCartItem.delete({ where: { id: itemId } });
@@ -143,6 +175,9 @@ export async function DELETE(
         { status: 400 }
       );
     }
+
+    const blocked = await checkEditableItem(params.code, itemId);
+    if (blocked) return blocked;
 
     await prisma.groupCartItem.delete({ where: { id: itemId } });
 

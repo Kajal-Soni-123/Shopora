@@ -114,6 +114,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
     checkSession();
+
+    // The auth cookie is shared across tabs, so a login/logout elsewhere silently
+    // changes who we are. Re-check when the tab regains focus, or when an API
+    // reports the cookie no longer matches the page (see 'shopora_auth_stale').
+    const recheck = () => {
+      if (document.visibilityState === 'visible') checkSession();
+    };
+    window.addEventListener('focus', recheck);
+    window.addEventListener('shopora_auth_stale', checkSession);
+    return () => {
+      window.removeEventListener('focus', recheck);
+      window.removeEventListener('shopora_auth_stale', checkSession);
+    };
   }, []);
 
   const login = async (email: string, password: string) => {

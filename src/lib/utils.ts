@@ -89,3 +89,16 @@ export function calculateOrderTotals(
 export function cn(...classes: (string | boolean | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+/**
+ * Product attributes worth showing as order details — drops image fields
+ * (frontImage/backImage hold base64 data URLs) and other long blob/URL values.
+ */
+export function displayableAttributes(attributes: unknown): [string, unknown][] {
+  if (!attributes || typeof attributes !== 'object') return [];
+  return Object.entries(attributes as Record<string, unknown>).filter(
+    ([key, value]) =>
+      !/image|img|photo|thumbnail|url/i.test(key) &&
+      !(typeof value === 'string' && (value.startsWith('data:') || value.length > 200))
+  );
+}

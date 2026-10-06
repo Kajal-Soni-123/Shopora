@@ -53,13 +53,25 @@ export async function POST(
       }
     }
 
-    // 2. Find existing member record by userId OR matching email (case-insensitive) OR guestName
-    let member = session.members.find((m) => {
-      if (user?.userId && m.userId === user.userId) return true;
-      if (emailLower && m.guestEmail && m.guestEmail.trim().toLowerCase() === emailLower) return true;
-      if (displayName && m.guestName && m.guestName.trim().toLowerCase() === displayName.toLowerCase()) return true;
-      return false;
-    });
+    // 2. Find existing member record, preferring the strongest identity match:
+    //    userId first, then email (case-insensitive), and only then display name.
+    //    Name matching is restricted to rows with no linked account/email so a guest
+    //    can't accidentally claim (or duplicate) a registered invitee's record.
+    const sameEmail = (m: typeof session.members[number]) =>
+      !!emailLower && !!m.guestEmail && m.guestEmail.trim().toLowerCase() === emailLower;
+    let member =
+      (user?.userId && session.members.find((m) => m.userId === user.userId)) ||
+      session.members.find(sameEmail) ||
+      (!user && !emailLower
+        ? session.members.find(
+            (m) =>
+              !m.userId &&
+              !m.guestEmail &&
+              !!m.guestName &&
+              m.guestName.trim().toLowerCase() === displayName.toLowerCase()
+          )
+        : undefined) ||
+      undefined;
 
     if (member) {
       // Update existing member record to JOINED status and link userId/email/name

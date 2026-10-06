@@ -41,6 +41,7 @@ import GroupShoppingBanner from '@/components/GroupShoppingBanner';
 import GroupShoppingModal from '@/components/GroupShoppingModal';
 import { detectJewelleryType, isProductEligibleForTryOn } from '@/lib/virtual-try-on/categoryUtils';
 import { getTryOnPlacement, getWristItem, isTryOnEnabled } from '@/lib/try-on/tryOnModel';
+import { ReviewPhotos } from '@/components/common/ReviewPhotos';
 
 // Loaded on demand: it pulls in three.js and the hand tracker.
 const ModelTryOnModal = dynamic(() => import('@/components/tryon/ModelTryOnModal').then((m) => m.ModelTryOnModal), {
@@ -61,6 +62,7 @@ interface Review {
   id: string;
   rating: number;
   comment: string;
+  images?: string[];
   createdAt: string;
   user: {
     id: string;
@@ -743,6 +745,7 @@ export default function ProductDetailPage() {
                     <p className="text-xs text-slate-700 font-medium leading-relaxed bg-white p-3 rounded-xl border border-slate-200/60 shadow-2xs">
                       "{r.comment}"
                     </p>
+                    <ReviewPhotos images={r.images} size="md" />
                   </div>
                 ))}
               </div>

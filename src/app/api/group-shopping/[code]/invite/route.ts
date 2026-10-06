@@ -43,12 +43,14 @@ export async function POST(
     for (const email of recipientEmails) {
       if (typeof email === 'string' && email.includes('@')) {
         const cleanEmail = email.trim();
+        // Personalised link so the join flow knows which invitation is being accepted
+        const recipientJoinUrl = `${joinUrl}&email=${encodeURIComponent(cleanEmail)}`;
         const result = await sendGroupShoppingInviteEmail({
           recipientEmail: cleanEmail,
           hostName,
           sessionTitle: session.title,
           groupCode: code,
-          joinUrl,
+          joinUrl: recipientJoinUrl,
         });
         sentResults.push(result);
 
@@ -58,14 +60,14 @@ export async function POST(
           title: "You're Invited to Co-Shop! 🛍️",
           message: `${hostName} invited you to join their Group Shopping Party "${session.title}".`,
           type: 'CO_SHOP_INVITE',
-          link: `/?groupCode=${code}`,
+          link: `/?groupCode=${code}&email=${encodeURIComponent(cleanEmail)}`,
           metadata: { groupCode: code, sessionTitle: session.title, hostName },
         });
 
         // Record invited member status if not already member
         try {
-          const registeredUser = await prisma.user.findUnique({
-            where: { email: cleanEmail.toLowerCase() },
+          const registeredUser = await prisma.user.findFirst({
+            where: { email: { equals: cleanEmail, mode: 'insensitive' } },
             select: { id: true, name: true, email: true },
           });
 
@@ -73,7 +75,7 @@ export async function POST(
             where: {
               sessionId: session.id,
               OR: [
-                { guestEmail: cleanEmail },
+                { guestEmail: { equals: cleanEmail, mode: 'insensitive' } },
                 ...(registeredUser ? [{ userId: registeredUser.id }] : []),
               ],
             },

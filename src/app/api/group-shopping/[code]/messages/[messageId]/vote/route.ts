@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { resolveActingMember, isStaleIdentity, STALE_IDENTITY_ERROR } from '@/lib/groupMember';
 
 export async function POST(
   req: NextRequest,
@@ -14,9 +15,10 @@ export async function POST(
     const body = await req.json();
     const { memberId, vote } = body;
 
-    if (!vote || !['YES', 'NO'].includes(vote)) {
+    // BUY / MAYBE / PASS are the options the suggestion card offers; YES / NO kept for older clients
+    if (!vote || !['BUY', 'MAYBE', 'PASS', 'YES', 'NO'].includes(vote)) {
       return NextResponse.json(
-        { success: false, error: 'Vote must be YES or NO' },
+        { success: false, error: 'Vote must be BUY, MAYBE or PASS' },
         { status: 400 }
       );
     }
@@ -37,11 +39,14 @@ export async function POST(
       );
     }
 
-    let activeMember = memberId
-      ? message.session.members.find((m) => m.id === memberId)
-      : user?.userId
-      ? message.session.members.find((m) => m.userId === user.userId)
-      : message.session.members[0];
+    const activeMember = resolveActingMember(message.session.members, user, memberId);
+
+    if (isStaleIdentity(activeMember, user, memberId)) {
+      return NextResponse.json(
+        { success: false, staleIdentity: true, error: STALE_IDENTITY_ERROR },
+        { status: 409 }
+      );
+    }
 
     if (!activeMember) {
       return NextResponse.json(
@@ -50,18 +55,20 @@ export async function POST(
       );
     }
 
-    const currentVotes: Record<string, string> = (message.votes as Record<string, string>) || {};
+    // Toggle this member's vote atomically in the DB (same choice → remove, else set),
+    // so concurrent votes from different members can't overwrite each other.
+    await prisma.$executeRaw`
+      UPDATE group_chat_messages
+      SET votes = CASE
+        WHEN COALESCE(votes::jsonb, '{}'::jsonb) ->> ${activeMember.id} = ${vote}
+          THEN COALESCE(votes::jsonb, '{}'::jsonb) - ${activeMember.id}
+        ELSE COALESCE(votes::jsonb, '{}'::jsonb) || jsonb_build_object(${activeMember.id}::text, ${vote}::text)
+      END
+      WHERE id = ${messageId}
+    `;
 
-    // Toggle vote if same choice selected, else set new vote
-    if (currentVotes[activeMember.id] === vote) {
-      delete currentVotes[activeMember.id];
-    } else {
-      currentVotes[activeMember.id] = vote;
-    }
-
-    const updated = await prisma.groupChatMessage.update({
+    const updated = await prisma.groupChatMessage.findUnique({
       where: { id: messageId },
-      data: { votes: currentVotes },
       include: {
         sender: {
           select: {

@@ -32,6 +32,10 @@ export async function POST(
       return ApiResponse.notFound('Shipment not found');
     }
 
+    if (shipment.provider === 'self') {
+      return ApiResponse.badRequest('This order is being delivered by the seller — no courier label or pickup is needed.');
+    }
+
     if (user.role === 'VENDOR' && user.vendorId !== shipment.fulfillment.vendorId) {
       return ApiResponse.forbidden('Access denied: You cannot schedule pickup for another vendor shipment');
     }

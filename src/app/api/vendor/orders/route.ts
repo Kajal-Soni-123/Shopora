@@ -6,6 +6,7 @@ import { getSessionUser } from '@/lib/auth';
 import { ApiResponse } from '@/lib/api-response';
 import { isValidFulfillmentTransition } from '@/lib/shipping/fulfillmentLifecycle';
 import { FulfillmentStatus } from '@/lib/shipping/types';
+import { stripDeliveryOtp } from '@/lib/shipping/applyShipmentUpdate';
 
 // GET /api/vendor/orders - Fetch sub-orders assigned to the logged-in vendor
 export async function GET() {
@@ -25,6 +26,7 @@ export async function GET() {
             customerEmail: true,
             shippingAddress: true,
             paymentStatus: true,
+            paymentMethod: true,
           },
         },
         items: {
@@ -48,7 +50,10 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
     });
 
-    return ApiResponse.success(subOrders);
+    // The seller self-delivery code is only for the customer — never send it to the vendor
+    return ApiResponse.success(
+      subOrders.map((so) => ({ ...so, shipments: so.shipments.map(stripDeliveryOtp) }))
+    );
   } catch (error) {
     console.error('Fetch vendor sub-orders error:', error);
     return ApiResponse.serverError('Failed to fetch sub-orders.');
@@ -117,7 +122,10 @@ export async function PUT(request: Request) {
       },
     });
 
-    return ApiResponse.success(updatedSubOrder, 'Fulfillment status updated successfully!');
+    return ApiResponse.success(
+      { ...updatedSubOrder, shipments: updatedSubOrder.shipments.map(stripDeliveryOtp) },
+      'Fulfillment status updated successfully!'
+    );
   } catch (error) {
     console.error('Update vendor sub-order error:', error);
     return ApiResponse.serverError('Failed to update sub-order.');

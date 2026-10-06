@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { resolveActingMember, isStaleIdentity, STALE_IDENTITY_ERROR } from '@/lib/groupMember';
 
 export async function POST(
   req: NextRequest,
@@ -12,7 +13,9 @@ export async function POST(
     const { code, messageId } = params;
     const user = await getSessionUser();
     const body = await req.json();
-    const { memberId, emoji } = body;
+    const { memberId } = body;
+    // Client sends `reaction`; `emoji` kept for older callers
+    const emoji = body.reaction ?? body.emoji;
 
     const message = await prisma.groupChatMessage.findUnique({
       where: { id: messageId },
@@ -30,11 +33,14 @@ export async function POST(
       );
     }
 
-    let activeMember = memberId
-      ? message.session.members.find((m) => m.id === memberId)
-      : user?.userId
-      ? message.session.members.find((m) => m.userId === user.userId)
-      : message.session.members[0];
+    const activeMember = resolveActingMember(message.session.members, user, memberId);
+
+    if (isStaleIdentity(activeMember, user, memberId)) {
+      return NextResponse.json(
+        { success: false, staleIdentity: true, error: STALE_IDENTITY_ERROR },
+        { status: 409 }
+      );
+    }
 
     if (!activeMember) {
       return NextResponse.json(

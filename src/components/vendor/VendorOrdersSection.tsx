@@ -15,6 +15,7 @@ interface VendorOrdersSectionProps {
     note?: string
   ) => Promise<void>;
   updatingId: string | null;
+  onRefresh?: () => Promise<void> | void;
 }
 
 const filterTabs = [
@@ -33,6 +34,7 @@ export const VendorOrdersSection: React.FC<VendorOrdersSectionProps> = ({
   loadingData,
   onUpdateStatus,
   updatingId,
+  onRefresh,
 }) => {
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -46,10 +48,16 @@ export const VendorOrdersSection: React.FC<VendorOrdersSectionProps> = ({
     );
   }
 
+  // Sub-orders stay SHIPPED while out for delivery — the live shipment status tells them apart
+  const tabStatus = (so: VendorSubOrderData) => {
+    const shipment = so.shipments?.find((s) => s.status !== 'CANCELLED');
+    return so.status === 'SHIPPED' && shipment?.status === 'OUT_FOR_DELIVERY' ? 'OUT_FOR_DELIVERY' : so.status;
+  };
+
   // Filter sub-orders
   const filteredSubOrders = subOrders.filter((so) => {
     // Status Filter
-    if (activeFilter !== 'ALL' && so.status !== activeFilter) {
+    if (activeFilter !== 'ALL' && tabStatus(so) !== activeFilter) {
       return false;
     }
     // Search Query
@@ -68,7 +76,7 @@ export const VendorOrdersSection: React.FC<VendorOrdersSectionProps> = ({
   // Calculate status counts
   const getCount = (statusId: string) => {
     if (statusId === 'ALL') return subOrders.length;
-    return subOrders.filter((so) => so.status === statusId).length;
+    return subOrders.filter((so) => tabStatus(so) === statusId).length;
   };
 
   return (
@@ -142,6 +150,7 @@ export const VendorOrdersSection: React.FC<VendorOrdersSectionProps> = ({
               subOrder={so}
               onUpdateStatus={onUpdateStatus}
               isUpdating={updatingId === so.id}
+              onRefresh={onRefresh}
             />
           ))}
         </div>

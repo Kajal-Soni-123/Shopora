@@ -5,6 +5,11 @@ import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
 import { ApiResponse } from '@/lib/api-response';
 
+const MAX_REVIEW_PHOTOS = 4;
+// Photos are compressed in the browser (~100–300 KB); this cap leaves headroom
+const MAX_PHOTO_CHARS = 1_500_000;
+const PHOTO_PATTERN = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
 // POST /api/reviews - Submit a review and comment on a product
 export async function POST(request: Request) {
   try {
@@ -14,7 +19,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { productId, rating, comment } = body;
+    const { productId, rating, comment, images = [] } = body;
 
     if (!productId || typeof productId !== 'string') {
       return ApiResponse.badRequest('Valid product ID is required.');
@@ -27,6 +32,13 @@ export async function POST(request: Request) {
 
     if (!comment || typeof comment !== 'string' || comment.trim().length === 0) {
       return ApiResponse.badRequest('Review comment text is required.');
+    }
+
+    if (!Array.isArray(images) || images.length > MAX_REVIEW_PHOTOS) {
+      return ApiResponse.badRequest(`You can attach up to ${MAX_REVIEW_PHOTOS} photos.`);
+    }
+    if (images.some((img: unknown) => typeof img !== 'string' || img.length > MAX_PHOTO_CHARS || !PHOTO_PATTERN.test(img))) {
+      return ApiResponse.badRequest('Review photos must be JPEG, PNG or WEBP images under about 1 MB each.');
     }
 
     // Verify product existence
@@ -77,6 +89,7 @@ export async function POST(request: Request) {
       data: {
         rating: Math.round(numRating),
         comment: comment.trim(),
+        images,
         userId: sessionUser.userId,
         productId: product.id,
       },
