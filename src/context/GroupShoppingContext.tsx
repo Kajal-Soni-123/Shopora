@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 
 export interface GroupMember {
   id: string;
@@ -68,6 +69,13 @@ export interface GroupSession {
     email: string;
     avatar?: string | null;
   };
+}
+
+export interface PendingGroupInvite {
+  code: string;
+  title: string;
+  hostName: string;
+  invitedAt: string;
 }
 
 export interface StartGroupCheckoutOptions {
@@ -161,13 +169,19 @@ interface GroupShoppingContextType {
   sendInviteEmails: (emails: string[]) => Promise<{ success: boolean; message?: string; error?: string }>;
   removeMember: (memberId: string) => Promise<{ success: boolean; error?: string }>;
   startGroupCheckout: (options: StartGroupCheckoutOptions) => Promise<{ success: boolean; error?: string }>;
+  pendingInvites: PendingGroupInvite[];
+  acceptInvite: (code: string) => Promise<{ success: boolean; error?: string }>;
+  declineInvite: (code: string) => Promise<{ success: boolean; error?: string }>;
   cancelGroupCheckout: () => Promise<{ success: boolean; error?: string }>;
   payGroupShare: (payment: {
     transactionId: string;
     paymentMethod: string;
     maskedDetails?: string;
   }) => Promise<{ success: boolean; error?: string; orderNumber?: string }>;
-  leaveSession: () => void;
+  leaveSession: () => Promise<{ success: boolean; error?: string; message?: string }>;
+  /** Title of a party the host just ended (shown once to former members) */
+  partyEndedNotice: string | null;
+  dismissPartyEndedNotice: () => void;
   sendMessage: (content: string, replyToId?: string) => Promise<boolean>;
   deleteMessage: (messageId: string) => Promise<boolean>;
   suggestProduct: (productId: string, comment?: string) => Promise<{ success: boolean; error?: string }>;
@@ -201,6 +215,8 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
   const [unreadCount, setUnreadCount] = useState(0);
   const [memberPresences, setMemberPresences] = useState<MemberPresence[]>([]);
   const [isGenieThinking, setIsGenieThinking] = useState(false);
+  const [pendingInvites, setPendingInvites] = useState<PendingGroupInvite[]>([]);
+  const [partyEndedNotice, setPartyEndedNotice] = useState<string | null>(null);
   const lastPresenceSendRef = React.useRef<number>(0);
 
   const isHost = activeSession && activeMember ? activeMember.role === 'HOST' : false;
@@ -301,10 +317,11 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
             sessionData.hostUserId === user.id ||
             sessionData.members?.some(
               (m: GroupMember) =>
-                m.userId === user.id ||
+                m.status !== 'INVITED' &&
+                (m.userId === user.id ||
                 (m.user?.id && m.user.id === user.id) ||
                 (m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase()) ||
-                (m.user?.email && m.user.email.toLowerCase() === user.email.toLowerCase())
+                (m.user?.email && m.user.email.toLowerCase() === user.email.toLowerCase()))
             );
 
           if (!isMemberOrHost) {
@@ -367,6 +384,51 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     syncActiveSession();
   }, [user]);
 
+  // Party invitations waiting for this user's answer (shown as an Accept / Decline prompt)
+  const refreshInvites = async () => {
+    if (!userRef.current) {
+      setPendingInvites([]);
+      return;
+    }
+    try {
+      const res = await fetch('/api/group-shopping/invites');
+      const json = await res.json();
+      if (json.success) setPendingInvites(json.data || []);
+    } catch (err) {
+      console.error('Failed to fetch group invites:', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshInvites();
+    if (!user) return;
+    const onFocus = () => refreshInvites();
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(refreshInvites, 30000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [user]);
+
+  const acceptInvite = async (code: string) => {
+    const result = await joinSession(code);
+    await refreshInvites();
+    if (result.success) setIsGroupModalOpen(true);
+    return result;
+  };
+
+  const declineInvite = async (code: string) => {
+    try {
+      const res = await fetch(`/api/group-shopping/${code}/decline`, { method: 'POST' });
+      const json = await res.json();
+      await refreshInvites();
+      return json.success ? { success: true } : { success: false, error: json.error || 'Failed to decline invitation.' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to decline invitation.' };
+    }
+  };
+
   // Fetch messages helper
   const fetchMessages = async (code: string) => {
     try {
@@ -408,6 +470,20 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
       const user = userRef.current;
       const res = await fetch(`/api/group-shopping/${code}`);
       const json = await res.json();
+      if (json.success && json.data?.status === 'CLOSED') {
+        // The host ended the party — everyone else has been removed
+        const wasInParty = typeof window !== 'undefined' && localStorage.getItem('shopora_group_code') === code;
+        const amHost = !!user && json.data.hostUserId === user.id;
+        if (wasInParty && !amHost) setPartyEndedNotice(json.data.title);
+        setActiveSession(null);
+        setActiveMember(null);
+        setMessages([]);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('shopora_group_code');
+          localStorage.removeItem(`shopora_group_member_${code}`);
+        }
+        return null;
+      }
       if (json.success && json.data) {
         setActiveSession(json.data);
         localStorage.setItem('shopora_group_code', code);
@@ -426,9 +502,10 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
           if (user) {
             currentMember = json.data.members.find(
               (m: GroupMember) =>
-                (m.userId && m.userId === user.id) ||
-                (m.user?.id && m.user.id === user.id) ||
-                (!m.userId && m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase())
+                m.status !== 'INVITED' && // invitations must be accepted first
+                ((m.userId && m.userId === user.id) ||
+                  (m.user?.id && m.user.id === user.id) ||
+                  (!m.userId && m.guestEmail && m.guestEmail.toLowerCase() === user.email.toLowerCase()))
             ) || null;
           }
 
@@ -700,27 +777,39 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
     }
   };
 
-  const leaveSession = async () => {
+  // Leave the party. If the host leaves, the server ends the party for everyone.
+  const leaveSession = async (): Promise<{ success: boolean; error?: string; message?: string }> => {
     if (activeSession) {
       const code = activeSession.code;
       const memberIdToDelete = activeMember?.id || (typeof window !== 'undefined' ? localStorage.getItem(`shopora_group_member_${code}`) : null);
 
       try {
         const queryParam = memberIdToDelete ? `?memberId=${memberIdToDelete}` : '';
-        await fetch(`/api/group-shopping/${code}/members${queryParam}`, {
+        const res = await fetch(`/api/group-shopping/${code}/members${queryParam}`, {
           method: 'DELETE',
         });
+        const json = await res.json().catch(() => ({}));
+        // 404 = already gone from the party; anything else that failed keeps them in it
+        if (!json.success && res.status !== 404) {
+          return { success: false, error: json.error || 'Could not leave the party. Please try again.' };
+        }
+        localStorage.removeItem('shopora_group_code');
+        localStorage.removeItem(`shopora_group_member_${code}`);
+        setActiveSession(null);
+        setActiveMember(null);
+        setMessages([]);
+        setUnreadCount(0);
+        return { success: true, message: json.message };
       } catch (err) {
         console.error('Error leaving group party on backend:', err);
+        return { success: false, error: 'Could not leave the party. Please check your connection.' };
       }
-
-      localStorage.removeItem('shopora_group_code');
-      localStorage.removeItem(`shopora_group_member_${code}`);
     }
     setActiveSession(null);
     setActiveMember(null);
     setMessages([]);
     setUnreadCount(0);
+    return { success: true };
   };
 
   const sendMessage = async (content: string, replyToId?: string) => {
@@ -972,10 +1061,10 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         await fetchMessages(sessionCode);
         return { success: true };
       }
-      return { success: false, error: json.error || 'Shopora Genie could not process request.' };
+      return { success: false, error: json.error || `${ASSISTANT_NAME} couldn't process that request.` };
     } catch (err: any) {
       console.error('Error asking Genie:', err);
-      return { success: false, error: err?.message || 'Failed to contact Shopora Genie.' };
+      return { success: false, error: err?.message || `Couldn't reach ${ASSISTANT_NAME}. Please try again.` };
     } finally {
       setIsGenieThinking(false);
     }
@@ -1009,9 +1098,14 @@ export function GroupShoppingProvider({ children }: { children: React.ReactNode 
         sendInviteEmails,
         removeMember,
         startGroupCheckout,
+        pendingInvites,
+        acceptInvite,
+        declineInvite,
         cancelGroupCheckout,
         payGroupShare,
         leaveSession,
+        partyEndedNotice,
+        dismissPartyEndedNotice: () => setPartyEndedNotice(null),
         sendMessage,
         deleteMessage,
         suggestProduct,

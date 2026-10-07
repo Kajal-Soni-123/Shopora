@@ -1,6 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { useAuth } from '@/context/AuthContext';
+
+const LOCAL_KEY = 'shopora_wishlist';
 
 export interface WishlistProduct {
   id: string;
@@ -40,61 +43,68 @@ const WishlistContext = createContext<WishlistContextType | undefined>(undefined
 export function WishlistProvider({ children }: { children: React.ReactNode }) {
   const [wishlist, setWishlist] = useState<WishlistProduct[]>([]);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  // The logged-in user comes from AuthContext (cookie session); guests keep a local-only wishlist
+  const { user, loading: authLoading } = useAuth();
+  const userId = user?.id ?? null;
+  const prevUserIdRef = useRef<string | null>(null);
 
-  // Sync current logged in user from localStorage / currentUser
+  const saveLocal = (items: WishlistProduct[]) => {
+    try {
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(items));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const readLocal = (): WishlistProduct[] => {
+    try {
+      const raw = localStorage.getItem(LOCAL_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
   useEffect(() => {
-    const checkUser = () => {
+    if (authLoading) return;
+    const previous = prevUserIdRef.current;
+    prevUserIdRef.current = userId;
+
+    const load = async () => {
+      if (!userId) {
+        // Just logged out → don't leave the previous account's wishlist on this device
+        if (previous) {
+          localStorage.removeItem(LOCAL_KEY);
+          setWishlist([]);
+        } else {
+          setWishlist(readLocal());
+        }
+        return;
+      }
+
       try {
-        const savedUser = localStorage.getItem('currentUser') || localStorage.getItem('user');
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          if (parsed?.id) {
-            setUserId(parsed.id);
-            return;
-          }
+        // Items saved while signed out (or before wishlists were stored on the account) move into the account
+        const local = readLocal();
+        if (local.length && !previous) {
+          await fetch('/api/wishlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productIds: local.map((p) => p.id) }),
+          });
+        }
+        const res = await fetch('/api/wishlist');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setWishlist(json.data);
+          saveLocal(json.data);
         }
       } catch (err) {
-        console.error('Error parsing user for wishlist:', err);
-      }
-      setUserId(null);
-    };
-
-    checkUser();
-    window.addEventListener('storage', checkUser);
-    return () => window.removeEventListener('storage', checkUser);
-  }, []);
-
-  // Fetch or load wishlist items
-  useEffect(() => {
-    const loadWishlist = async () => {
-      if (userId) {
-        try {
-          const res = await fetch(`/api/wishlist?userId=${userId}`);
-          const json = await res.json();
-          if (json.success && Array.isArray(json.data)) {
-            setWishlist(json.data);
-            localStorage.setItem('shopora_wishlist', JSON.stringify(json.data));
-            return;
-          }
-        } catch (err) {
-          console.error('Failed to load server wishlist:', err);
-        }
-      }
-
-      // Guest or server fallback
-      const local = localStorage.getItem('shopora_wishlist');
-      if (local) {
-        try {
-          setWishlist(JSON.parse(local));
-        } catch (e) {
-          setWishlist([]);
-        }
+        console.error('Failed to load wishlist:', err);
+        setWishlist(readLocal());
       }
     };
 
-    loadWishlist();
-  }, [userId]);
+    load();
+  }, [userId, authLoading]);
 
   const isInWishlist = (productId: string) => {
     return wishlist.some((item) => item.id === productId);
@@ -111,19 +121,17 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
     }
 
     setWishlist(updatedWishlist);
-    localStorage.setItem('shopora_wishlist', JSON.stringify(updatedWishlist));
+    saveLocal(updatedWishlist);
 
     if (userId) {
       try {
         if (exists) {
-          await fetch(`/api/wishlist?userId=${userId}&productId=${product.id}`, {
-            method: 'DELETE',
-          });
+          await fetch(`/api/wishlist?productId=${product.id}`, { method: 'DELETE' });
         } else {
           await fetch('/api/wishlist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, productId: product.id }),
+            body: JSON.stringify({ productId: product.id }),
           });
         }
       } catch (err) {
@@ -135,13 +143,11 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
   const removeFromWishlist = async (productId: string) => {
     const updatedWishlist = wishlist.filter((item) => item.id !== productId);
     setWishlist(updatedWishlist);
-    localStorage.setItem('shopora_wishlist', JSON.stringify(updatedWishlist));
+    saveLocal(updatedWishlist);
 
     if (userId) {
       try {
-        await fetch(`/api/wishlist?userId=${userId}&productId=${productId}`, {
-          method: 'DELETE',
-        });
+        await fetch(`/api/wishlist?productId=${productId}`, { method: 'DELETE' });
       } catch (err) {
         console.error('Error removing from server wishlist:', err);
       }
@@ -150,7 +156,13 @@ export function WishlistProvider({ children }: { children: React.ReactNode }) {
 
   const clearWishlist = () => {
     setWishlist([]);
-    localStorage.removeItem('shopora_wishlist');
+    localStorage.removeItem(LOCAL_KEY);
+    // Signed in: the wishlist is stored on the account, so clear it there too
+    if (userId) {
+      fetch('/api/wishlist?all=true', { method: 'DELETE' }).catch((err) =>
+        console.error('Error clearing server wishlist:', err)
+      );
+    }
   };
 
   return (

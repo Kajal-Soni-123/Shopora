@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getSessionUser } from '@/lib/auth';
+import { findPendingInvites } from '@/lib/groupInvites';
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
           {
             members: {
               some: {
+                status: { not: 'INVITED' }, // an invitation isn't membership until accepted
                 OR: [
                   { userId: currentUser.userId },
                   { guestEmail: { equals: currentUser.email, mode: 'insensitive' } },
@@ -67,43 +69,42 @@ export async function GET(req: NextRequest) {
       orderBy: { updatedAt: 'desc' },
     });
 
+    const invites = await findPendingInvites(currentUser);
+
     if (!session) {
       return NextResponse.json({
         success: true,
         session: null,
+        invites,
       });
     }
 
-    // Find or update the member record for this user
+    // The user's own (joined) member record — pending invitations are never auto-accepted
     let member = session.members.find(
       (m) =>
-        m.userId === currentUser.userId ||
-        (m.guestEmail && m.guestEmail.toLowerCase() === currentUser.email.toLowerCase())
+        m.status !== 'INVITED' &&
+        (m.userId === currentUser.userId ||
+          (m.guestEmail && m.guestEmail.toLowerCase() === currentUser.email.toLowerCase()))
     );
 
-    if (member && (member.status === 'INVITED' || !member.userId)) {
-      // Auto-claim member status for logged-in user
-      const updatedMember = await prisma.groupSessionMember.update({
+    if (member && !member.userId) {
+      // Link a guest record joined with this email to the logged-in account
+      member = await prisma.groupSessionMember.update({
         where: { id: member.id },
-        data: {
-          userId: currentUser.userId,
-          guestName: currentUser.name || member.guestName,
-          status: member.status === 'INVITED' ? 'JOINED' : member.status,
-        },
+        data: { userId: currentUser.userId, guestName: currentUser.name || member.guestName },
         include: {
           user: {
             select: { id: true, name: true, email: true, avatar: true },
           },
         },
       });
-
-      member = updatedMember;
     }
 
     return NextResponse.json({
       success: true,
       session,
       member: member || null,
+      invites,
     });
   } catch (error: any) {
     console.error('Error checking user active group session:', error);

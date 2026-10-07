@@ -9,6 +9,12 @@ import {
 import { resolveActingMember } from '@/lib/groupMember';
 import { runGiftFlow, toDbState, GenieReply } from '@/lib/genie/giftFlow';
 import { runProductSearch } from '@/lib/genie/productQuery';
+import { answerAppQuestion, genieFallbackReply } from '@/lib/genie/appGuide';
+import { isOfferQuestion, runOfferQuery } from '@/lib/genie/offers';
+import { isAssistantAIConfigured } from '@/lib/assistant/gemini';
+import { runAssistant, ChatTurn } from '@/lib/assistant/agent';
+import { isAssistantRateLimited, ASSISTANT_RATE_LIMIT_MESSAGE } from '@/lib/assistant/rateLimit';
+import { ASSISTANT_NAME, ASSISTANT_DISPLAY_NAME, ASSISTANT_EMAIL, ASSISTANT_MENTION } from '@/lib/assistant';
 
 const MESSAGE_INCLUDE = {
   sender: {
@@ -42,10 +48,12 @@ async function analyzePromptWithLLM(
   prompt: string,
   availableCategories: string[]
 ): Promise<LLMAnalysisResult> {
-  const cleanPrompt = prompt.replace(/@genie/gi, '').trim();
+  const cleanPrompt = prompt.replace(ASSISTANT_MENTION, '').trim();
 
-  const geminiApiKey = process.env.GEMINI_API_KEY || process.env.LLM_API_KEY;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
+  // Remote parsing is superseded by the AI assistant (src/lib/assistant); this rule-based path
+  // only runs as its fallback, so don't spend seconds calling the retired gemini-1.5-flash here.
+  const geminiApiKey: string | undefined = undefined;
+  const openaiApiKey: string | undefined = undefined;
 
   const userPromptPayload = buildGenieUserPrompt(prompt, availableCategories);
 
@@ -173,9 +181,14 @@ export async function POST(
     const { prompt, memberId } = body;
     const user = await getSessionUser();
 
+    const limitKey = user?.userId || memberId || req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'anonymous';
+    if (isAssistantRateLimited(limitKey)) {
+      return NextResponse.json({ success: false, error: ASSISTANT_RATE_LIMIT_MESSAGE }, { status: 429 });
+    }
+
     if (!prompt || !prompt.trim()) {
       return NextResponse.json(
-        { success: false, error: 'Prompt is required for Shopora Genie.' },
+        { success: false, error: `Please type a message for ${ASSISTANT_NAME}.` },
         { status: 400 }
       );
     }
@@ -208,15 +221,24 @@ export async function POST(
 
     // 2. Ensure virtual Genie bot member exists in session
     let genieMember = session.members.find(
-      (m) => m.guestEmail === 'genie@shopora.ai' || m.guestName.includes('Genie')
+      (m) => m.guestEmail === ASSISTANT_EMAIL
     );
+
+    if (genieMember && genieMember.guestName !== ASSISTANT_DISPLAY_NAME) {
+      // Parties created before the assistant was renamed keep the old name — refresh it
+      genieMember = await prisma.groupSessionMember.update({
+        where: { id: genieMember.id },
+        data: { guestName: ASSISTANT_DISPLAY_NAME },
+        include: { user: { select: { id: true, name: true } } },
+      });
+    }
 
     if (!genieMember) {
       genieMember = await prisma.groupSessionMember.create({
         data: {
           sessionId: session.id,
-          guestName: 'Shopora Genie ✨',
-          guestEmail: 'genie@shopora.ai',
+          guestName: ASSISTANT_DISPLAY_NAME,
+          guestEmail: ASSISTANT_EMAIL,
           role: 'MEMBER',
           status: 'JOINED',
         },
@@ -228,8 +250,9 @@ export async function POST(
 
     // Post the asker's words into the chat too, so the whole group can follow the conversation
     const asker = resolveActingMember(session.members, user, memberId);
+    let askerMessageId: string | null = null;
     if (asker && asker.id !== genieMember.id) {
-      await prisma.groupChatMessage.create({
+      askerMessageId = (await prisma.groupChatMessage.create({
         data: {
           sessionId: session.id,
           senderId: asker.id,
@@ -238,26 +261,13 @@ export async function POST(
           reactions: {},
           votes: {},
         },
-      });
+      })).id;
     }
 
     // 3. Get available catalog categories for LLM context
     const categories = await prisma.category.findMany({ select: { id: true, name: true, parentId: true } });
     const categoryNames = categories.map((c) => c.name);
 
-    // Conversational gift finder (who → gender → occasion → budget → category → picks)
-    const gift = await runGiftFlow({
-      prisma,
-      prompt,
-      rawState: session.genieState,
-      categories,
-    });
-    if (gift.handled || session.genieState) {
-      await prisma.groupShoppingSession.update({
-        where: { id: session.id },
-        data: { genieState: toDbState(gift.handled ? gift.state : null) },
-      });
-    }
     const postGenieReplies = async (replies: GenieReply[]) => {
       let lastMessage = null;
       for (const reply of replies) {
@@ -277,13 +287,83 @@ export async function POST(
       return NextResponse.json({ success: true, data: lastMessage });
     };
 
+    // AI assistant first: Gemini + read-only database lookups, with the recent chat as context.
+    // Falls through to the rule-based answers below if the AI is unavailable.
+    if (isAssistantAIConfigured()) {
+      try {
+        const recent = await prisma.groupChatMessage.findMany({
+          where: { sessionId: session.id, ...(askerMessageId ? { id: { not: askerMessageId } } : {}) },
+          orderBy: { createdAt: 'desc' },
+          take: 14,
+          select: {
+            type: true,
+            content: true,
+            sender: { select: { guestName: true, guestEmail: true, user: { select: { name: true } } } },
+            product: { select: { title: true, price: true } },
+          },
+        });
+        const history: ChatTurn[] = recent.reverse().map((m) => {
+          const fromAssistant = m.sender.guestEmail === ASSISTANT_EMAIL;
+          const name = m.sender.user?.name || m.sender.guestName;
+          const product = m.product ? `[product card: ${m.product.title}, $${m.product.price}]` : '';
+          if (fromAssistant) return { role: 'assistant', text: [m.content, product].filter(Boolean).join('\n') };
+          if (m.type === 'SYSTEM_EVENT') return { role: 'user', text: `[party update] ${m.content || ''}` };
+          return { role: 'user', text: `${name}: ${[m.content, product && `suggested ${product}`].filter(Boolean).join(' ')}` };
+        });
+        const askerName = asker?.user?.name || asker?.guestName || 'A member';
+        const answer = await runAssistant({
+          prompt: `${askerName}: ${prompt.trim()}`,
+          history,
+          ctx: {
+            user: user ? { userId: user.userId, email: user.email, name: user.name } : null,
+            party: { sessionId: session.id, code: session.code },
+          },
+        });
+        if (session.genieState) {
+          await prisma.groupShoppingSession.update({ where: { id: session.id }, data: { genieState: toDbState(null) } });
+        }
+        return postGenieReplies([
+          { content: answer.text },
+          ...answer.products.map((p, i) => ({
+            productId: p.productId,
+            content: p.note || (i === 0 ? `✨ ${ASSISTANT_NAME}'s pick` : '💡 Another option'),
+          })),
+        ]);
+      } catch (err: any) {
+        console.warn('Assistant AI unavailable in group chat, using rule-based answers:', err?.message);
+      }
+    }
+
+    // Questions about Shopora itself ("tell me about this app", "how does split payment work?").
+    // Answered without touching an in-progress gift conversation.
+    const appAnswer = answerAppQuestion(prompt);
+    if (appAnswer) return postGenieReplies([{ content: appAnswer }]);
+
+    // Offers / discounts / sales — looked up live from vendor offers in the database
+    if (isOfferQuestion(prompt)) {
+      return postGenieReplies(await runOfferQuery({ prisma, prompt, categories }));
+    }
+
+    // Conversational gift finder (who → gender → occasion → budget → category → picks)
+    const gift = await runGiftFlow({
+      prisma,
+      prompt,
+      rawState: session.genieState,
+      categories,
+    });
+    if (gift.handled || session.genieState) {
+      await prisma.groupShoppingSession.update({
+        where: { id: session.id },
+        data: { genieState: toDbState(gift.handled ? gift.state : null) },
+      });
+    }
     if (gift.handled) return postGenieReplies(gift.replies);
 
     // 4. Analyze Prompt using LLM Engine
     const llmResult = await analyzePromptWithLLM(prompt, categoryNames);
 
     const lowerPrompt = prompt.toLowerCase().trim();
-    const cleanPrompt = lowerPrompt.replace(/@genie/gi, '').trim();
+    const cleanPrompt = lowerPrompt.replace(ASSISTANT_MENTION, '').trim();
 
     // Universal Repetition Collapsing & Typo Normalizer
     // 1. Collapse 3+ repeated characters (hiiiiiiiiiiiiiiiiiiiiiiiii -> hi, heeeeeeeeeelo -> helo, helooooooooo -> helo)
@@ -327,7 +407,7 @@ export async function POST(
           senderId: genieMember.id,
           type: 'TEXT',
           content:
-            "Hey there! 👋 I'm Genie, your shopping buddy for this party. Are you looking for a gift for someone special, or just browsing? Either way, I'd love to help! 😊\n\n[ 🎁 Help me find a gift ]  [ 🌸 Skincare ]  [ 👗 Clothes ]  [ 💍 Jewellery ]  [ ☕ Appliances ]",
+            `Hey there! 👋 I'm ${ASSISTANT_NAME}, your shopping buddy for this party. Are you looking for a gift for someone special, or just browsing? Either way, I'd love to help! 😊\n\n[ 🎁 Help me find a gift ]  [ 🌸 Skincare ]  [ 👗 Clothes ]  [ 💍 Jewellery ]  [ ☕ Appliances ]`,
           productId: null,
           reactions: {},
           votes: {},
@@ -631,6 +711,9 @@ export async function POST(
       // Category WAS specified in prompt! Directly show the recommended product WITHOUT category option pills
       const recipientLabel = recipient ? ` for your ${recipient}` : '';
       responseIntro = `✨ Here is our top recommended **${selectedCatLabel}** product${recipientLabel}! I have also listed out matching items in your main product catalog on screen.`;
+    } else if (isNoCategoryMentioned && !isGiftQuery) {
+      // Nothing recognisable (not a gift, product, or app question) — say so honestly
+      responseIntro = genieFallbackReply();
     } else if (isNoCategoryMentioned) {
       // NO category specified in prompt! Give category options so user can pick
       const recipientLabel = recipient ? ` for your ${recipient}` : '';
@@ -683,9 +766,9 @@ export async function POST(
       llmAnalysis: llmResult,
     });
   } catch (error: any) {
-    console.error('Error in Shopora Genie LLM route:', error);
+    console.error('Error in shopping assistant route:', error);
     return NextResponse.json(
-      { success: false, error: error.message || 'Genie LLM was unable to process request' },
+      { success: false, error: error.message || `${ASSISTANT_NAME} couldn't process that request. Please try again.` },
       { status: 500 }
     );
   }

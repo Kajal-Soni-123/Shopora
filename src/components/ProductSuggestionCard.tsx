@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { GroupChatMessage, useGroupShopping, GroupMember } from '@/context/GroupShoppingContext';
+import { ASSISTANT_NAME, isAssistantSender } from '@/lib/assistant';
 
 interface ProductSuggestionCardProps {
   message: GroupChatMessage;
@@ -183,13 +184,13 @@ export function ProductSuggestionCard({ message }: ProductSuggestionCardProps) {
       <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
         <span
           className={`inline-flex items-center gap-1.5 font-bold px-2.5 py-0.5 rounded-full text-[11px] ${
-            message.sender.guestName?.includes('Genie') || message.sender.guestEmail === 'genie@shopora.ai'
+            isAssistantSender(message.sender)
               ? 'bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white shadow-xs animate-pulse'
               : 'bg-indigo-50 text-indigo-700'
           }`}
         >
-          {message.sender.guestName?.includes('Genie') || message.sender.guestEmail === 'genie@shopora.ai'
-            ? '🧞‍♂️ Shopora Genie AI Pick'
+          {isAssistantSender(message.sender)
+            ? `✨ ${ASSISTANT_NAME}'s Pick`
             : `✨ Suggested by ${isAuthor ? 'You' : message.sender.user?.name || message.sender.guestName}`}
         </span>
         <span className="text-[10px] font-medium text-slate-400">

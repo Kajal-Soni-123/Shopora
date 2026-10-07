@@ -24,7 +24,7 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
     setIsInviteDrawerOpen,
   } = useGroupShopping();
 
-  const [activeTab, setActiveTab] = useState<'ACTIVE' | 'CREATE' | 'JOIN' | 'INVITE'>('ACTIVE');
+  const [activeTab, setActiveTab] = useState<'ACTIVE' | 'CREATE' | 'JOIN' | 'INVITE'>(activeSession ? 'ACTIVE' : 'CREATE');
   const [partyTitle, setPartyTitle] = useState("Alex's Shopping Party");
   const [checkoutMode, setCheckoutMode] = useState<'HOST_PAY' | 'SPLIT_PAY'>('HOST_PAY');
   const [guestHostName, setGuestHostName] = useState('');
@@ -46,13 +46,22 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
   const [memberToRemove, setMemberToRemove] = useState<{ id: string; name: string } | null>(null);
   const [isConfirmLoading, setIsConfirmLoading] = useState(false);
 
-  const prevSessionIdRef = React.useRef<string | undefined>(undefined);
+  // Sentinel so the tab is picked on first render too (a missing session is also `undefined`)
+  // Cart locked for payment: nobody can leave, be removed, or end the party until it completes
+  const isCheckoutLocked = !!activeSession && ['WAITING_FOR_PAYMENTS', 'CHECKED_OUT'].includes(activeSession.status);
+
+  const prevSessionIdRef = React.useRef<string | undefined | null>(null);
 
   const handleConfirmLeaveParty = async () => {
     setIsConfirmLoading(true);
-    await leaveSession();
+    const result = await leaveSession();
     setIsConfirmLoading(false);
     setIsLeaveConfirmOpen(false);
+    if (!result.success) {
+      setToast({ type: 'error', message: result.error || 'Could not leave the party.' });
+      setTimeout(() => setToast(null), 5000);
+      return;
+    }
     onClose();
   };
 
@@ -107,6 +116,13 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
       prevSessionIdRef.current = currentId;
     }
   }, [activeSession?.id, activeMember?.id]);
+
+  // The Dashboard and Invite tabs need a party — never leave the modal on an empty tab
+  useEffect(() => {
+    if (!activeSession && (activeTab === 'ACTIVE' || activeTab === 'INVITE')) {
+      setActiveTab('CREATE');
+    }
+  }, [activeSession, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'INVITE' && activeSession?.code) {
@@ -412,7 +428,7 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
                         )}
 
                         {/* Host Remove Member Action */}
-                        {isHost && member.role !== 'HOST' && member.id !== activeMember?.id && (
+                        {isHost && !isCheckoutLocked && member.role !== 'HOST' && member.id !== activeMember?.id && (
                           <button
                             onClick={() => setMemberToRemove({ id: member.id, name: member.guestName })}
                             disabled={isSubmitting || isConfirmLoading}
@@ -438,12 +454,20 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
                   <span>✉️</span>
                   <span>Invite More Friends</span>
                 </button>
+                {isCheckoutLocked && (
+                  <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    🔒 Checkout is in progress — you can {isHost ? 'end' : 'leave'} the party once the payment is completed
+                    {isHost ? ' (or cancel checkout from the Group Cart)' : ''}.
+                  </p>
+                )}
                 <div className="flex space-x-2">
                   <button
                     onClick={() => setIsLeaveConfirmOpen(true)}
-                    className="flex-1 py-2 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors border border-slate-200 dark:border-slate-800"
+                    disabled={isCheckoutLocked}
+                    title={isCheckoutLocked ? 'Not available while payment is in progress' : undefined}
+                    className="flex-1 py-2 text-xs font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors border border-slate-200 dark:border-slate-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-slate-500 disabled:hover:bg-transparent"
                   >
-                    Leave Party
+                    {isHost ? 'End Party' : 'Leave Party'}
                   </button>
                   <button
                     onClick={onClose}
@@ -750,10 +774,14 @@ export default function GroupShoppingModal({ isOpen, onClose }: GroupShoppingMod
         isOpen={isLeaveConfirmOpen}
         onClose={() => setIsLeaveConfirmOpen(false)}
         onConfirm={handleConfirmLeaveParty}
-        title="Leave Group Shopping Party"
+        title={isHost ? 'End Group Shopping Party' : 'Leave Group Shopping Party'}
         itemName={activeSession ? `Party: "${activeSession.title}"` : undefined}
-        description="Are you sure you want to leave this party? You will be removed from the party participants list and lose access to the shared cart and group chat."
-        confirmText="Leave Party"
+        description={
+          isHost
+            ? "You're the host — if you leave, the party ends for everyone. All members will be removed, and the shared cart and group chat will be closed."
+            : 'Are you sure you want to leave this party? You will be removed from the party participants list and lose access to the shared cart and group chat.'
+        }
+        confirmText={isHost ? 'End Party for Everyone' : 'Leave Party'}
         cancelText="Cancel"
         variant="danger"
         isLoading={isConfirmLoading}

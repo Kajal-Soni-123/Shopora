@@ -7,6 +7,8 @@ import { WishlistProvider } from '@/context/WishlistContext';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { LoginRequiredModal } from '@/components/auth/LoginRequiredModal';
 import { GroupChatDrawer } from '@/components/GroupChatDrawer';
+import { AssistantChatWidget } from '@/components/AssistantChatWidget';
+import { GroupInvitePrompt, GroupPartyEndedNotice } from '@/components/GroupInvitePrompt';
 import { WishlistDrawer } from '@/components/WishlistDrawer';
 
 const inter = Inter({
@@ -38,6 +40,9 @@ export default function RootLayout({
             <GroupShoppingProvider>
               {children}
               <GroupChatDrawer />
+              <AssistantChatWidget />
+              <GroupInvitePrompt />
+              <GroupPartyEndedNotice />
               <WishlistDrawer />
               <AuthModal />
               <LoginRequiredModal />

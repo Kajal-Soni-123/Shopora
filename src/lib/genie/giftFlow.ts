@@ -17,6 +17,7 @@ import {
   describePreferences,
   matchPreferences,
 } from '@/lib/genie/catalogSearch';
+import { ASSISTANT_MENTION } from '@/lib/assistant';
 
 export type Gender = 'female' | 'male' | 'child' | 'any';
 type Step = 'RECIPIENT' | 'GENDER' | 'OCCASION' | 'BUDGET' | 'CATEGORY' | 'RESULTS';
@@ -130,7 +131,7 @@ const BUDGET_PILLS = ['Under $50', '$50 – $200', '$200 – $1,000', '$1,000+',
 
 export function normalize(prompt: string): string {
   return prompt
-    .replace(/@genie/gi, '')
+    .replace(ASSISTANT_MENTION, '')
     .toLowerCase()
     .replace(/[\u2018\u2019]/g, "'")
     // drop emoji / symbols (pill labels carry them) but keep currency and dashes

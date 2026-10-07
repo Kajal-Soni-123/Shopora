@@ -2,43 +2,42 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
 
-// GET /api/wishlist?userId=...
-export async function GET(request: Request) {
+/**
+ * The signed-in user's wishlist. The user always comes from the auth cookie — a userId sent by
+ * the browser is ignored, so nobody can read or change someone else's wishlist.
+ */
+async function requireUser() {
+  const user = await getSessionUser();
+  if (!user?.userId) {
+    return {
+      error: NextResponse.json({ success: false, error: 'Please sign in to use your wishlist.' }, { status: 401 }),
+    };
+  }
+  return { userId: user.userId };
+}
+
+// GET /api/wishlist
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: 'User ID is required to fetch wishlist.' },
-        { status: 400 }
-      );
-    }
+    const auth = await requireUser();
+    if (auth.error) return auth.error;
 
     const wishlistItems = await prisma.wishlistItem.findMany({
-      where: { userId },
+      where: { userId: auth.userId },
       include: {
         product: {
           include: {
-            vendor: {
-              select: { id: true, name: true },
-            },
-            category: {
-              select: { id: true, name: true },
-            },
+            vendor: { select: { id: true, name: true } },
+            category: { select: { id: true, name: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const products = wishlistItems.map((item) => item.product);
-
-    return NextResponse.json({
-      success: true,
-      data: products,
-    });
+    return NextResponse.json({ success: true, data: wishlistItems.map((item) => item.product) });
   } catch (error: any) {
     console.error('Error fetching wishlist:', error);
     return NextResponse.json(
@@ -48,51 +47,30 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/wishlist - Add item to wishlist
+// POST /api/wishlist - Add one product ({ productId }) or several ({ productIds }) to the wishlist
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { userId, productId } = body;
+    const auth = await requireUser();
+    if (auth.error) return auth.error;
 
-    if (!userId || !productId) {
-      return NextResponse.json(
-        { success: false, error: 'Both userId and productId are required.' },
-        { status: 400 }
-      );
+    const body = await request.json().catch(() => ({}));
+    const requested: unknown[] = Array.isArray(body.productIds) ? body.productIds : [body.productId];
+    const ids = Array.from(new Set(requested.filter((id): id is string => typeof id === 'string' && !!id))).slice(0, 100);
+    if (!ids.length) {
+      return NextResponse.json({ success: false, error: 'productId is required.' }, { status: 400 });
     }
 
-    // Check if item already exists
-    const existing = await prisma.wishlistItem.findUnique({
-      where: {
-        userId_productId: {
-          userId,
-          productId,
-        },
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        data: existing,
-        message: 'Product already in wishlist.',
-      });
-    }
-
-    const item = await prisma.wishlistItem.create({
-      data: {
-        userId,
-        productId,
-      },
-      include: {
-        product: true,
-      },
+    // Only real products; duplicates are ignored (unique on userId + productId)
+    const existing = await prisma.product.findMany({ where: { id: { in: ids } }, select: { id: true } });
+    const result = await prisma.wishlistItem.createMany({
+      data: existing.map((p) => ({ userId: auth.userId, productId: p.id })),
+      skipDuplicates: true,
     });
 
     return NextResponse.json({
       success: true,
-      data: item,
-      message: 'Product added to wishlist successfully.',
+      added: result.count,
+      message: result.count ? 'Added to wishlist.' : 'Already in wishlist.',
     });
   } catch (error: any) {
     console.error('Error adding to wishlist:', error);
@@ -103,31 +81,26 @@ export async function POST(request: Request) {
   }
 }
 
-// DELETE /api/wishlist - Remove item from wishlist
+// DELETE /api/wishlist?productId=...  - Remove a product from the wishlist
+// DELETE /api/wishlist?all=true         - Clear the whole wishlist
 export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const productId = searchParams.get('productId');
+    const auth = await requireUser();
+    if (auth.error) return auth.error;
 
-    if (!userId || !productId) {
-      return NextResponse.json(
-        { success: false, error: 'Both userId and productId are required.' },
-        { status: 400 }
-      );
+    const params = new URL(request.url).searchParams;
+    if (params.get('all') === 'true') {
+      await prisma.wishlistItem.deleteMany({ where: { userId: auth.userId } });
+      return NextResponse.json({ success: true, message: 'Wishlist cleared.' });
     }
 
-    await prisma.wishlistItem.deleteMany({
-      where: {
-        userId,
-        productId,
-      },
-    });
+    const productId = params.get('productId');
+    if (!productId) {
+      return NextResponse.json({ success: false, error: 'productId is required.' }, { status: 400 });
+    }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Product removed from wishlist.',
-    });
+    await prisma.wishlistItem.deleteMany({ where: { userId: auth.userId, productId } });
+    return NextResponse.json({ success: true, message: 'Product removed from wishlist.' });
   } catch (error: any) {
     console.error('Error removing from wishlist:', error);
     return NextResponse.json(

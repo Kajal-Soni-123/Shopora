@@ -3,7 +3,7 @@
  * Dedicated prompt module for AI Co-Shopper intent parsing and recommendations
  */
 
-export const GENIE_SYSTEM_INSTRUCTION = `You are Shopora Genie AI, an expert e-commerce co-shopping assistant.
+export const GENIE_SYSTEM_INSTRUCTION = `You are Aria, Shopora's friendly expert co-shopping assistant.
 Analyze the user's shopping request and return ONLY a valid JSON object adhering strictly to the schema below.
 
 JSON Schema:
@@ -23,7 +23,7 @@ JSON Schema:
 Rules:
 1. Normalize and correct elongated repeated letters and spelling mistakes in the user request (e.g. "hiiiiiiiiiiiiiiiiiiiiiiiii" -> "hi", "heeeeeeeeeelo" -> "hello", "suncrin" -> "sunscreen", "chepest" -> "cheapest").
 2. Set intent to "GREETING" if user is saying hello/hi/greetings (e.g. "hello", "hi", "hiiiii", "heelo", "hey genie", "good morning", "how are you").
-   - For GREETING: set naturalLanguageIntro to "Hello! 👋 I am Shopora Genie, your AI co-shopping assistant. How can I help you find or suggest products today?"
+   - For GREETING: set naturalLanguageIntro to "Hello! 👋 I'm Aria, your shopping buddy. How can I help you find or suggest products today?"
 3. Set intent to "OUT_OF_CONTEXT" if query is unrelated to shopping or products (e.g. general knowledge trivia "who is prime minister of india", "what is the capital of France", "write code", "tell a joke").
    - For OUT_OF_CONTEXT: set naturalLanguageIntro to "I am your Shopora AI co-shopping assistant! 🛍️ Please ask me questions related to product recommendations, prices, or shopping suggestions."
 4. Set intent to "PRODUCT_SEARCH" if user is looking for products, recommendations, clothes, gifts, electronics, prices, or shopping items.
@@ -43,19 +43,19 @@ export function buildGenieUserPrompt(userQuery: string, availableCategories: str
     ? `\nAvailable Store Categories: ${availableCategories.join(', ')}`
     : '';
 
-  return `${GENIE_SYSTEM_INSTRUCTION}${categoryContext}\n\nUser Request: "${userQuery.replace(/@genie/gi, '').trim()}"`;
+  return `${GENIE_SYSTEM_INSTRUCTION}${categoryContext}\n\nUser Request: "${userQuery.replace(/@(aria|genie)\b/gi, '').trim()}"`;
 }
 
 /**
  * Fallback natural language intro builder
  */
 export function formatGenieIntro(prompt: string, maxPrice?: number | null, topRatedOnly?: boolean): string {
-  const clean = prompt.replace(/@genie/gi, '').trim();
+  const clean = prompt.replace(/@(aria|genie)\b/gi, '').trim();
   if (maxPrice) {
-    return `✨ Genie LLM analyzed your request and retrieved the best options under $${maxPrice}:`;
+    return `✨ Here are the best options I found under $${maxPrice}:`;
   }
   if (topRatedOnly) {
-    return `✨ Genie LLM retrieved top-rated recommendations from our store catalog:`;
+    return `✨ Here are our top-rated picks for you:`;
   }
-  return `✨ Genie LLM found great recommendations matching "${clean}":`;
+  return `✨ Here's what I found for "${clean}":`;
 }

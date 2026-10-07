@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useGroupShopping, GroupChatMessage } from '@/context/GroupShoppingContext';
 import { ProductSuggestionCard } from './ProductSuggestionCard';
 import { EmojiPicker } from './EmojiPicker';
+import { ASSISTANT_NAME, isAssistantSender } from '@/lib/assistant';
 
 export function GroupChatDrawer() {
   const {
@@ -109,16 +110,15 @@ export function GroupChatDrawer() {
   const isGenieAwaitingReply =
     !!activeSession?.genieState?.step &&
     !!lastMessage &&
-    (lastMessage.sender?.guestEmail === 'genie@shopora.ai' || !!lastMessage.sender?.guestName?.includes('Genie'));
+    isAssistantSender(lastMessage.sender);
 
   // Automatic intent detection for natural shopping queries
   const isShoppingQuery = (text: string) => {
     const lower = text.toLowerCase().trim();
     return (
       isGenieAwaitingReply ||
-      lower.startsWith('@genie') ||
+      /^@?(aria|genie)\b/.test(lower) || // addressed to the assistant (old @genie still works)
       /\b(gifts?|gifting|present for)\b/i.test(lower) ||
-      lower.startsWith('genie') ||
       /^(recommend|suggest|find|show me|looking for|search|cheapest|best rated|deals under|items under|\$)/i.test(lower) ||
       /\b(under \$|less than \$|below \$|which one should|what is the best)\b/i.test(lower)
     );
@@ -135,7 +135,7 @@ export function GroupChatDrawer() {
     const trimmed = inputText.trim();
     let success = false;
 
-    // Smart Auto-Routing: If query matches shopping intent or starts with @genie, route to Genie AI!
+    // Smart Auto-Routing: shopping questions and messages addressed to the assistant (@aria) go to it
     if (isShoppingQuery(trimmed)) {
       const result = await askGenie(trimmed);
       success = result.success;
@@ -596,15 +596,15 @@ export function GroupChatDrawer() {
                   })
                 )}
 
-                {/* Shopora Genie AI Searching/Thinking Indicator */}
+                {/* Assistant searching/thinking indicator */}
                 {isGenieThinking && (
                   <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 text-white shadow-md animate-pulse my-2">
                     <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-base font-bold">
-                      🧞‍♂️
+                      ✨
                     </div>
                     <div className="text-xs min-w-0">
                       <p className="font-bold flex items-center gap-1">
-                        <span>Shopora Genie is searching...</span>
+                        <span>{ASSISTANT_NAME} is searching...</span>
                         <span className="text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full font-mono">AI</span>
                       </p>
                       <p className="text-[10px] text-indigo-200 truncate">Finding the best matches & catalog deals for your party ✨</p>
@@ -653,20 +653,20 @@ export function GroupChatDrawer() {
                     placeholder={
                       replyTargetMessage
                         ? `Reply to ${replyTargetMessage.sender.user?.name || replyTargetMessage.sender.guestName}...`
-                        : 'Ask Genie e.g. "shoes under $50" or chat...'
+                        : `Ask ${ASSISTANT_NAME} e.g. "shoes under $50" or chat...`
                     }
                     className="flex-1 text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 placeholder-slate-400 min-w-0"
                   />
 
-                  {/* Dedicated Ask Genie AI Button */}
+                  {/* Dedicated Ask-the-assistant button */}
                   <button
                     type="button"
                     onClick={handleAskGenieDirect}
                     disabled={isSending || isGenieThinking || !inputText.trim()}
-                    title="Ask Shopora Genie AI for product recommendations"
+                    title={`Ask ${ASSISTANT_NAME} for product recommendations`}
                     className="py-2.5 px-3 bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:opacity-95 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all disabled:opacity-40 flex items-center gap-1 flex-shrink-0 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <span>✨ Ask Genie</span>
+                    <span>✨ Ask {ASSISTANT_NAME}</span>
                   </button>
 
                   {/* Regular Chat Send Button */}

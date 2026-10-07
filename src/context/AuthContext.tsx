@@ -178,6 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('latest_shopora_order');
         localStorage.removeItem('latest_nexus_order');
         localStorage.removeItem('shopora_cart');
+        localStorage.removeItem('shopora_wishlist'); // the account's wishlist lives on the server; don't leave a copy on this device
         localStorage.removeItem('shopora_group_code');
         Object.keys(localStorage).forEach((key) => {
           if (key.startsWith('shopora_group_member_')) {
