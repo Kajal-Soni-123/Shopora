@@ -18,6 +18,7 @@ import {
   Users,
   Heart,
   X,
+  Camera,
 } from 'lucide-react';
 import { ShoporaLogo } from '@/components/common/ShoporaLogo';
 import { CartItem } from '@/lib/data';
@@ -25,6 +26,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useGroupShopping } from '@/context/GroupShoppingContext';
 import { useWishlist } from '@/context/WishlistContext';
 import NotificationDrawer from '@/components/NotificationDrawer';
+import { SnapSearchModal } from '@/components/SnapSearchModal';
 
 function UserNavControls() {
   const { user, openAuthModal, logout } = useAuth();
@@ -238,6 +240,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const rootCategories = dbCategories.filter((c) => !c.parentId);
 
   const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [isSnapModalOpen, setIsSnapModalOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 w-full bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs">
@@ -259,9 +262,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </Link>
           </div>
 
-          {/* Center: Desktop Prominent Search Bar */}
+          {/* Center: Desktop Prominent Search Bar with Visual Search Snap Button */}
           <div className="flex-1 max-w-xl hidden md:block">
-            <div className="relative">
+            <div className="relative flex items-center">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -269,18 +272,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 value={searchQuery}
                 onChange={(e) => onSearchChange?.(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full bg-slate-100/90 hover:bg-slate-100 text-sm text-slate-900 pl-10 pr-9 py-2 rounded-xl border border-slate-200/60 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400 font-medium"
+                className="w-full bg-slate-100/90 hover:bg-slate-100 text-sm text-slate-900 pl-10 pr-24 py-2 rounded-xl border border-slate-200/60 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400 font-medium"
               />
-              {searchQuery && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => onSearchChange?.('')}
+                    className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => onSearchChange?.('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                  title="Clear search"
+                  onClick={() => setIsSnapModalOpen(true)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-200/70 transition-all cursor-pointer"
+                  title="Snap-to-Product Visual Search"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <Camera className="w-4 h-4" />
                 </button>
-              )}
+              </div>
             </div>
           </div>
 
@@ -408,7 +421,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Mobile Search Expand Bar */}
         {showMobileSearch && (
           <div className="pb-3 md:hidden animate-in fade-in slide-in-from-top-2 duration-150">
-            <div className="relative">
+            <div className="relative flex items-center">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
@@ -416,9 +429,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 value={searchQuery}
                 onChange={(e) => onSearchChange?.(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
-                className="w-full bg-slate-100 text-sm text-slate-900 pl-10 pr-4 py-2 rounded-xl border border-slate-200 focus:bg-white focus:border-indigo-600 focus:outline-none"
+                className="w-full bg-slate-100 text-sm text-slate-900 pl-10 pr-20 py-2 rounded-xl border border-slate-200 focus:bg-white focus:border-indigo-600 focus:outline-none font-medium"
                 autoFocus
               />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileSearch(false);
+                  setIsSnapModalOpen(true);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-200/70 transition-all cursor-pointer"
+                title="Snap-to-Product Visual Search"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
@@ -576,6 +600,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </div>
       </div>
+
+      {/* Snap-to-Product Search Modal */}
+      <SnapSearchModal
+        isOpen={isSnapModalOpen}
+        onClose={() => setIsSnapModalOpen(false)}
+      />
     </header>
   );
 };
